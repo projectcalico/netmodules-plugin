@@ -1,0 +1,2 @@
+git+https://github.com/Metaswitch/calico-docker.git
+
