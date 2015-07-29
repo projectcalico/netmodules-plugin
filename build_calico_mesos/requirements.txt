@@ -1,2 +1,2 @@
 PyInstaller==2.1
-git+https://github.com/Metaswitch/calico-docker.git
+git+https://github.com/projectcalico/libcalico.git
