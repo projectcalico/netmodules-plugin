@@ -1,6 +1,21 @@
 import sys
+import os
+import errno
+import uuid
+from pycalico import netns
+from pycalico.ipam import IPAMClient
+from pycalico.datastore import Rules, Rule, Endpoint
+from netaddr import IPAddress, AddrFormatError
 import json
-import pycalico
+import logging
+import logging.handlers
+
+LOGFILE = "/var/log/calico/isolator.log"
+ORCHESTRATOR_ID = "mesos"
+
+datastore = IPAMClient()
+_log = logging.getLogger(__name__)
+
 
 def main():
     stdin_raw_data = sys.stdin.read()
@@ -21,7 +36,7 @@ def main():
     try:
         args = stdin_json['args']
     except KeyError:
-        quit_with_error("Missing arguments")
+        quit_with_error("Missing args")
 
     # Call command with args
     if command == 'prepare':
@@ -35,8 +50,38 @@ def main():
     else:
         quit_with_error("Unknown command: %s" % command)
 
+
+def setup_logging(logfile):
+    # Ensure directory exists.
+    try:
+        os.makedirs(os.path.dirname(LOGFILE))
+    except OSError as oserr:
+        if oserr.errno != errno.EEXIST:
+            raise
+
+    _log.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(
+                '%(asctime)s [%(levelname)s] %(name)s %(lineno)d: %(message)s')
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(formatter)
+    _log.addHandler(handler)
+    handler = logging.handlers.TimedRotatingFileHandler(logfile,
+                                                        when='D',
+                                                        backupCount=10)
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(formatter)
+    _log.addHandler(handler)
+
+    netns.setup_logging(logfile)
+
+
 def prepare(args):
     """
+    - Create veth pair,
+    - Add routes to slave IP forwarding table,
+    - Trigger calico agent for routing and firewalling
+
     "args": {
         "hostname": "slave-H3A-1", # Required
         "container-id": "ba11f1de-fc4d-46fd-9f15-424f4ef05a3a", # Required
@@ -48,33 +93,207 @@ def prepare(args):
             "pop": "houston"
     }
     """
-    pass
+    hostname = args.get("hostname")
+    container_id = args.get("container-id")
+    ipv4_addrs = args.get("ipv4_addrs")
+    ipv6_addrs = args.get("ipv6_addrs")
+    netgroups = args.get("negroups")
+    labels = args.get("labels")
+
+    # Validate data
+    if not container_id:
+        quit_with_error("Missing container-id")
+    if not hostname:
+        quit_with_error("Missing hostname")
+
+    # Validate ipv4_addrs
+    if ipv4_addrs != [] and not ipv4_addrs:
+        quit_with_error("Missing ipv4_addrs")
+    else:
+        ipv4_addrs_validated = []
+        for ip_addr in ipv4_addrs:
+            try:
+                ip = IPAddress(ip_addr)
+                ipv4_addrs_validated.append(ip)
+            except AddrFormatError:
+                quit_with_error("IP address %s could not be parsed: %s" % ip_addr)
+
+    if ipv6_addrs != [] and not ipv6_addrs:
+        quit_with_error("Missing ipv6_addrs")
+
+    _prepare(hostname, container_id, ipv4_addrs_validated, ipv6_addrs, netgroups, labels)
+
+
+def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
+    _log.info("Preparing network for Container with ID %s", container_id)
+    _log.info("IP: %s, Profile %s", ipv4_addrs, profiles)
+
+    # Confirm the IP Addresses are correctly within the pool, then reserve them.
+    for ip in ipv4_addrs:
+        _log.debug('Attempting to assign IPv4 address %s', ip)
+
+        # Find the pool which this IP belongs to
+        pools = datastore.get_ip_pools(4)
+        pool = None
+        for candidate_pool in pools:
+            if ip in candidate_pool:
+                pool = candidate_pool
+                _log.debug('Using IP pool %s', pool)
+                break
+        if not pool:
+            _log.warning("Requested IP %s isn't in any configured "
+                         "pool. Container %s", ip, container_id)
+            sys.exit(1)
+        if not datastore.assign_address(pool, ip):
+            _log.warning("IP address couldn't be assigned for "
+                         "container %s, IP=%s", container_id, ip)
+
+    # TODO: replicate with ipv6_addrs
+
+    # Create an endpoint
+    ep = Endpoint(hostname=hostname,
+                  orchestrator_id=ORCHESTRATOR_ID,
+                  workload_id=container_id,
+                  endpoint_id=uuid.uuid1().hex,
+                  state="active",
+                  mac=None)
+
+    # Create the veth
+    netns.create_veth(ep.name, ep.temp_interface_name)
+
+    # Add ips to the endpoint
+    for ip in ipv4_addrs:
+        netns.add_ip_to_ns_veth(container_id, ip, ep.temp_interface_name)
+
+    # Assign nexthop on the endpoint
+    next_hop_ips = datastore.get_default_next_hops(hostname)
+    netns.add_ns_default_route(container_id, next_hop_ips.pop(), ep.temp_interface_name)
+
+    # Assign profiles on the endpoint
+    if profiles == []:
+        profiles = ["mesos"]
+    for profile in profiles:
+        if not datastore.profile_exists(profile):
+            _log.info("Autocreating profile %s", profile)
+            datastore.create_profile(profile)
+            prof = datastore.get_profile(profile)
+
+            # Set up the profile rules to allow incoming connections from the host
+            # since the slave process will be running there.
+            # Also allow connections from others in the profile.
+            # Deny other connections (default, so not explicitly needed).
+            (ipv4, _) = datastore.get_host_ips(hostname)
+            host_net = ipv4 + "/32"
+            allow_slave = Rule(action="allow", src_net=host_net)
+            allow_self = Rule(action="allow", src_tag=profile)
+            allow_all = Rule(action="allow")
+            prof.rules = Rules(id=profile,
+                               inbound_rules=[allow_slave, allow_self],
+                               outbound_rules=[allow_all])
+            datastore.profile_update_rules(prof)
+        _log.info("Adding container %s to profile %s", container_id, profile)
+        ep.profile_ids = [profile]
+        _log.info("Finished adding container %s to profile %s",
+                  container_id, profile)
+
+    # Register the endpoint (and profiles) with Felix
+    datastore.set_endpoint(ep)
+
+    _log.info("Finished network for container %s, IP=%s", container_id, ip)
 
 
 def isolate(args):
     """
+    - Push container-end of veth pair into container namespace
+    - Assign IP address on container side
+
     "args": {
         "hostname": "slave-H3A-1", # Required
         "container-id": "ba11f1de-fc4d-46fd-9f15-424f4ef05a3a", # Required
         "pid": 3789 # Required
     }
     """
-    pass
+    hostname = args.get("hostname")
+    container_id = args.get("container-id")
+    pid = args.get("pid")
+
+    if not container_id:
+        quit_with_error("Missing container-id")
+    if not hostname:
+        quit_with_error("Missing hostname")
+    if not pid:
+        quit_with_error("Missing pid")
+
+    _isolate(hostname, container_id, pid)
+
+
+def _isolate(hostname, container_id, pid):
+    """
+    - Push container-end of veth pair into container namespace
+    - Assign IP address on container side
+    """
+    _log.info("Isolating executor with Container ID %s, PID %s.",
+              container_id, pid)
+
+    # TODO: specify endpoint_id?
+    ep = datastore.get_endpoint(hostname=hostname,
+                                orchestrator_id=ORCHESTRATOR_ID,
+                                workload_id=container_id)
+
+    # TODO: confirm that eth0 is the correct interface name
+    interface = 'eth0'
+
+    # pid is the temp namespace
+    netns.move_veth_into_ns(pid, ep.temp_interface_name, interface)
+
+    # TODO: get the endpoint, assign its IP Addrs to the interface in the new ns?
 
 
 def update(args):
-    pass
+    quit_with_error("Update is not yet implemented.")
 
 
 def cleanup(args):
-    """
-    "args": {
-        "hostname": "slave-H3A-1", # Required
-        "container-id": "ba11f1de-fc4d-46fd-9f15-424f4ef05a3a" # Required
-    }
-    """
-    pass
+    hostname = args.get("hostname")
+    container_id = args.get("container-id")
 
+    if not container_id:
+        quit_with_error("Missing container-id")
+    if not hostname:
+        quit_with_error("Missing hostname")
+
+    _cleanup(hostname, container_id)
+
+
+def _cleanup(hostname, container_id):
+    _log.info("Cleaning executor with Container ID %s.", container_id)
+
+    endpoint = datastore.get_endpoint(hostname=hostname,
+                                      orchestrator_id=ORCHESTRATOR_ID,
+                                      workload_id=container_id)
+
+    # Unassign any address it has.
+    for net in endpoint.ipv4_nets | endpoint.ipv6_nets:
+        assert(net.size == 1)
+        ip = net.ip
+        _log.info("Attempting to un-allocate IP %s", ip)
+        pools = datastore.get_ip_pools("v%s" % ip.version)
+        for pool in pools:
+            if ip in pool:
+                # Ignore failure to unassign address, since we're not
+                # enforcing assignments strictly in datastore.py.
+                _log.info("Un-allocate IP %s from pool %s", ip, pool)
+                datastore.unassign_address(pool, ip)
+
+    # Remove the endpoint
+    _log.info("Removing veth for endpoint %s", endpoint.endpoint_id)
+    netns.remove_endpoint(endpoint.endpoint_id)
+
+    # Remove the container from the datastore.
+    datastore.remove_workload(hostname=hostname,
+                              orchestrator_id=ORCHESTRATOR_ID,
+                              workload_id=container_id)
+    _log.info("Cleanup complete for container %s", container_id)
 
 
 def quit_with_error(msg=None):
@@ -87,5 +306,6 @@ def quit_with_error(msg=None):
 
 
 if __name__ == '__main__':
+    setup_logging(LOGFILE)
     main()
     quit_with_error()
