@@ -22,7 +22,8 @@ RUN apt-get update && \
 # Install the python packages needed for running UTs and building calico_mesos.
 # Git is installed to allow pip installation from a github repo and also so
 # that the right branch can be included if uploading coverage.
-ADD requirements.txt /code/
+# ADD requirements.txt /code/
+ADD ./ /code/
 RUN pip install -r requirements.txt
 
 # Can't run pyinstaller as root so add a user - https://github.com/pyinstaller/pyinstaller/issues/1081

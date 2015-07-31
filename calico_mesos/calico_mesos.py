@@ -2,23 +2,27 @@ import sys
 import os
 import errno
 import uuid
+import traceback
 from pycalico import netns
 from pycalico.ipam import IPAMClient
 from pycalico.datastore import Rules, Rule, Endpoint
+from pycalico.util import get_host_ips
 from netaddr import IPAddress, AddrFormatError
 import json
 import logging
 import logging.handlers
 
+
 LOGFILE = "/var/log/calico/isolator.log"
 ORCHESTRATOR_ID = "mesos"
 
 datastore = IPAMClient()
-_log = logging.getLogger(__name__)
+_log = logging.getLogger("MESOS")
 
 
 def main():
     stdin_raw_data = sys.stdin.read()
+    _log.info("Received request: %s" % stdin_raw_data)
 
     # Convert input data to JSON object
     try:
@@ -39,6 +43,7 @@ def main():
         quit_with_error("Missing args")
 
     # Call command with args
+    _log.debug("Executing %s" % command)
     if command == 'prepare':
         prepare(args)
     elif command == 'isolate':
@@ -62,10 +67,10 @@ def setup_logging(logfile):
     _log.setLevel(logging.DEBUG)
     formatter = logging.Formatter(
                 '%(asctime)s [%(levelname)s] %(name)s %(lineno)d: %(message)s')
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setLevel(logging.INFO)
-    handler.setFormatter(formatter)
-    _log.addHandler(handler)
+    # handler = logging.StreamHandler(sys.stdout)
+    # handler.setLevel(logging.INFO)
+    # handler.setFormatter(formatter)
+    # _log.addHandler(handler)
     handler = logging.handlers.TimedRotatingFileHandler(logfile,
                                                         when='D',
                                                         backupCount=10)
@@ -97,7 +102,7 @@ def prepare(args):
     container_id = args.get("container-id")
     ipv4_addrs = args.get("ipv4_addrs")
     ipv6_addrs = args.get("ipv6_addrs")
-    netgroups = args.get("negroups")
+    netgroups = args.get("netgroups")
     labels = args.get("labels")
 
     # Validate data
@@ -120,8 +125,9 @@ def prepare(args):
 
     if ipv6_addrs != [] and not ipv6_addrs:
         quit_with_error("Missing ipv6_addrs")
-
+    _log.debug("Request validated. Executing")
     _prepare(hostname, container_id, ipv4_addrs_validated, ipv6_addrs, netgroups, labels)
+    _log.debug("Request completed.")
 
 
 def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
@@ -141,12 +147,12 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
                 _log.debug('Using IP pool %s', pool)
                 break
         if not pool:
-            _log.warning("Requested IP %s isn't in any configured "
-                         "pool. Container %s", ip, container_id)
-            sys.exit(1)
+            quit_with_error("Requested IP %s isn't in any configured pool. "
+                            "Container %s"% (ip, container_id))
         if not datastore.assign_address(pool, ip):
-            _log.warning("IP address couldn't be assigned for "
-                         "container %s, IP=%s", container_id, ip)
+            quit_with_error("IP address couldn't be assigned for "
+                         "container %s, IP=%s" % (container_id, ip))
+
 
     # TODO: replicate with ipv6_addrs
 
@@ -159,19 +165,27 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
                   mac=None)
 
     # Create the veth
+    _log.info("Creating veth")
     netns.create_veth(ep.name, ep.temp_interface_name)
 
     # Add ips to the endpoint
     for ip in ipv4_addrs:
-        netns.add_ip_to_ns_veth(container_id, ip, ep.temp_interface_name)
+        _log.info("Adding %s to %s" % (ip, ep.temp_interface_name))
+        netns.add_ip_to_veth(ip, ep.temp_interface_name)
+
 
     # Assign nexthop on the endpoint
+    _log.info("Adding default route to interface")
     next_hop_ips = datastore.get_default_next_hops(hostname)
-    netns.add_ns_default_route(container_id, next_hop_ips.pop(), ep.temp_interface_name)
+    _log.debug("Got nexthops: %s" % next_hop_ips)
+
+    netns.add_default_route(next_hop_ips[4], ep.temp_interface_name)
+    # netns.add_default_route(next_hop_ips[6], ep.temp_interface_name)
 
     # Assign profiles on the endpoint
     if profiles == []:
         profiles = ["mesos"]
+    _log.info("Assigning Profiles: %s" % profiles)
     for profile in profiles:
         if not datastore.profile_exists(profile):
             _log.info("Autocreating profile %s", profile)
@@ -182,8 +196,10 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
             # since the slave process will be running there.
             # Also allow connections from others in the profile.
             # Deny other connections (default, so not explicitly needed).
-            (ipv4, _) = datastore.get_host_ips(hostname)
+            # TODO: confirm that we're not getting more interfaces than we bargained for
+            ipv4 = get_host_ips(4, exclude=["docker0"]).pop()
             host_net = ipv4 + "/32"
+            _log.info("adding accept rule for %s" % host_net)
             allow_slave = Rule(action="allow", src_net=host_net)
             allow_self = Rule(action="allow", src_tag=profile)
             allow_all = Rule(action="allow")
@@ -197,6 +213,7 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
                   container_id, profile)
 
     # Register the endpoint (and profiles) with Felix
+    _log.info("Setting the endpoint.")
     datastore.set_endpoint(ep)
 
     _log.info("Finished network for container %s, IP=%s", container_id, ip)
@@ -301,7 +318,7 @@ def quit_with_error(msg=None):
     Print error JSON, then quit
     """
     error_msg = json.dumps({"error": msg})
-    print error_msg
+    sys.stdout.write(error_msg)
     sys.exit(1)
 
 
