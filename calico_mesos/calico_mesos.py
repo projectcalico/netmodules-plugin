@@ -149,9 +149,9 @@ def prepare(args):
 
 def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
     """
-    - Create veth pair
-    - Add routes to slave IP forwarding table
-    - Trigger calico agent for routing and firewalling
+    Prepare an endpoint and the virtual interface to which it will be assigned.
+    Interface is not configured here since any IP address and gateway settings will
+    be dropped when the interface is moved into the new namepace in isolate.
 
     :param hostname: Hostname of the slave which the container is running on
     :param container_id: The container's ID
@@ -217,23 +217,8 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
     netns.create_veth(ep.name, ep.temp_interface_name)
 
     # Assign IPs to the endpoint
-    for ip in ipv4_addrs:
-        _log.info("Adding %s to %s" % (ip, ep.temp_interface_name))
-        netns.add_ip_to_veth(ip, ep.temp_interface_name)
-    for ip in ipv6_addrs:
-        _log.info("Adding %s to %s" % (ip, ep.temp_interface_name))
-        netns.add_ip_to_veth(ip, ep.temp_interface_name)
-
-    # Assign default routes on the interface
-    _log.info("Adding default route to interface")
-    next_hop_ips = datastore.get_default_next_hops(hostname)
-    _log.debug("Got nexthops: %s" % next_hop_ips)
-    netns.add_default_route(next_hop_ips[4], ep.temp_interface_name)
-    if ipv6_addrs:
-        if 6 not in next_hop_ips:
-            quit_with_error("Can't assign IPv6 addresses without an IPv6 nexthop on host interface.")
-        else:
-            netns.add_default_route(next_hop_ips[6], ep.temp_interface_name)
+    ep.ipv4_nets = set(ipv4_addrs)
+    ep.ipv6_nets = set(ipv6_addrs)
 
     # Assign profiles on the endpoint
     if profiles == []:
@@ -274,8 +259,8 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
 
 def isolate(args):
     """
-    - Push container-end of veth pair into container namespace
-    - Assign IP address on container side
+    Toplevel function which validates and sanitizes json args into variables
+    which can be passed to _isolate.
 
     "args": {
         "hostname": "slave-H3A-1", # Required
@@ -294,13 +279,16 @@ def isolate(args):
     if not pid:
         quit_with_error("Missing pid")
 
+    _log.debug("Request validated. Executing")
     _isolate(hostname, container_id, pid)
+    _log.debug("Request completed.")
 
 
 def _isolate(hostname, container_id, pid):
     """
-    - Push container-end of veth pair into container namespace
-    - Assign IP address on container side
+    Push container-end of veth pair into container namespace
+    Assign IP address and on container side
+
     :param hostname: Hostname of the slave which the container is running on
     :param container_id: The container's ID
     :param pid: Process ID of the new network namespace which the container's
@@ -313,10 +301,23 @@ def _isolate(hostname, container_id, pid):
     ep = datastore.get_endpoint(hostname=hostname,
                                 orchestrator_id=ORCHESTRATOR_ID,
                                 workload_id=container_id)
-
+    ep = Endpoint()
     # TODO: confirm that eth0 is the correct interface name
     interface = 'eth0'
     netns.move_veth_into_ns(pid, ep.temp_interface_name, interface)
+
+    # Assign IP Addresses
+    for ip in ep.ipv4_nets + ep.ipv6_nets:
+        _log.info("Adding %s to %s" % (ip, ep.temp_interface_name))
+        netns.add_ip_to_veth(ip, ep.temp_interface_name)
+
+    # Assign default routes on the interface
+    _log.info("Adding default route to interface")
+    next_hop_ips = datastore.get_default_next_hops(hostname)
+    _log.debug("Got nexthops: %s" % next_hop_ips)
+    netns.add_default_route(next_hop_ips[4], ep.temp_interface_name)
+    # TODO: check that nexthop exists for ipv6
+    netns.add_default_route(next_hop_ips[6], ep.temp_interface_name)
 
 
 def update(args):
