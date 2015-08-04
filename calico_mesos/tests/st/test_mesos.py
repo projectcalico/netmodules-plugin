@@ -2,10 +2,12 @@ import os
 from test_base import TestBase
 import json
 import socket
-from docker import Client
-from sh import calicoctl, ln, ip
+from sh import calicoctl, ip
 from sh import ErrorReturnCode, ErrorReturnCode_1
 import re
+import etcd
+from pycalico.util import get_host_ips
+
 
 class TestMesos(TestBase):
     pid = 3789
@@ -13,7 +15,6 @@ class TestMesos(TestBase):
 
     def tearDown(self):
         # Create a network namespace
-        from sh import ip
         ns = ip("netns", "show", self.pid)
         if ns and (str(self.pid) in ns.stdout):
             try:
@@ -62,35 +63,19 @@ class TestMesos(TestBase):
         self.assertEqual(self.stderr, '')
         self.assertEqual(output, error_msg())
 
-
-    def test_isolate(self):
-        pass
-        return
-        # # Start a sample container
-        # docker_client = Client(version=DOCKER_VERISON, base_url='unix://var/run/docker.sock')
-        # container = docker_client.create_container('busybox')
-        # container.start()
-        # from nose.tools import set_trace; set_trace()
-        # Create the netns, which will create a netns at
-        # /var/run/netns/{pid}
-        ip("netns", "add", self.pid)
-
-        # os.makedirs("/proc/%s/ns/" % self.container_id)
-        # os.symlink("/var/run/netns/%s" % self.pid, "/proc/%s/ns/net" % self.container_id)
-
-        # Test isolate
-        indata = {
-            "command": "isolate",
-            "args": {
-                "hostname": hostname, # Required
-                "container-id": self.container_id, # Required
-                "pid": self.pid # Required
-            }
-        }
-
-        output = self.binary_exec(indata)
-        self.assertEqual(self.stderr, '')
-        self.assertEqual(output, error_msg())
+        # Check if the endpoint was correctly written to etcd
+        host = "127.0.0.1"
+        port = 4001
+        etcd_client = etcd.Client(host=host, port=port)
+        leaves = etcd_client.read('/calico/v1/host/%s/workload/%s/%s/endpoint' % \
+                                  (hostname, "mesos", self.container_id), recursive=True).leaves
+        values = [leaf for leaf in leaves]
+        self.assertEqual(len(values), 1, "Only 1 endpoint should exist: %d were found" % len(values))
+        endpoint = values.pop()
+        endpoint_dict = json.loads(endpoint.value)
+        self.assertEqual(endpoint_dict["ipv4_gateway"], get_host_ips(exclude="docker0").pop())
+        self.assertEqual(endpoint_dict["ipv4_nets"], ["192.168.23.4"])
+        self.assertEqual(endpoint_dict["profile_ids"], ["prod", "frontend"])
 
 
 def error_msg(msg=None):

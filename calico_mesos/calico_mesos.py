@@ -17,7 +17,7 @@ LOGFILE = "/var/log/calico/isolator.log"
 ORCHESTRATOR_ID = "mesos"
 
 datastore = IPAMClient()
-_log = logging.getLogger("MESOS")
+_log = logging.getLogger("CALICOMESOS")
 
 
 def main():
@@ -151,17 +151,17 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
     """
     Prepare an endpoint and the virtual interface to which it will be assigned.
     Interface is not configured here since any IP address and gateway settings will
-    be dropped when the interface is moved into the new namepace in isolate.
+    be dropped when the interface is moved into the new namepace in isolate. Instead,
+    just the endpoint is created and saved.
 
     :param hostname: Hostname of the slave which the container is running on
     :param container_id: The container's ID
-    :param ipv4_addrs: List of desired IPv4 addresses to be assigned to the container
-    :param ipv6_addrs: List of desired IPv6 addresses to be assigned to the container
-    :param profiles: List of desired profiles to be assigned to the container
-    :param labels:
+    :param ipv4_addrs: List of desired IPv4 addresses to be assigned to the endpoint
+    :param ipv6_addrs: List of desired IPv6 addresses to be assigned to the endpoint
+    :param profiles: List of desired profiles to be assigned to the endpoint
+    :param labels: TODO
     :return: None
     """
-
     _log.info("Preparing network for Container with ID %s", container_id)
     _log.info("IP: %s, Profile %s", ipv4_addrs, profiles)
 
@@ -183,7 +183,7 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
         if not datastore.assign_address(pool, ip):
             quit_with_error("IP address couldn't be assigned for "
                          "container %s, IP=%s" % (container_id, ip))
-
+            # TODO: cleanup and unassign previous addresses?
 
     # Confirm the IPv6 Addresses are correctly within the pool, then reserve them.
     for ip in ipv6_addrs:
@@ -220,11 +220,18 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
     ep.ipv4_nets = set(ipv4_addrs)
     ep.ipv6_nets = set(ipv6_addrs)
 
+    # Assign default gateways to the endpoint
+    next_hop_ips = datastore.get_default_next_hops(hostname)
+    ep.ipv4_gateway = next_hop_ips[4]
+    if next_hop_ips.has_key(6):
+        ep.ipv6_gateway = next_hop_ips[6]
+
     # Assign profiles on the endpoint
     if profiles == []:
         profiles = ["mesos"]
     _log.info("Assigning Profiles: %s" % profiles)
     for profile in profiles:
+        # Create profile with default rules, if it does not exist
         if not datastore.profile_exists(profile):
             _log.info("Autocreating profile %s", profile)
             datastore.create_profile(profile)
@@ -245,10 +252,10 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
                                inbound_rules=[allow_slave, allow_self],
                                outbound_rules=[allow_all])
             datastore.profile_update_rules(prof)
+
+        # Assign profile to endpoint
         _log.info("Adding container %s to profile %s", container_id, profile)
-        ep.profile_ids = [profile]
-        _log.info("Finished adding container %s to profile %s",
-                  container_id, profile)
+        ep.profile_ids.append(profile)
 
     # Save the endpoint into the datastore, thereby registering it
     # (and its profiles) with Felix
@@ -287,7 +294,7 @@ def isolate(args):
 def _isolate(hostname, container_id, pid):
     """
     Push container-end of veth pair into container namespace
-    Assign IP address and on container side
+    Assign IP address and default routes on container side
 
     :param hostname: Hostname of the slave which the container is running on
     :param container_id: The container's ID
@@ -313,11 +320,9 @@ def _isolate(hostname, container_id, pid):
 
     # Assign default routes on the interface
     _log.info("Adding default route to interface")
-    next_hop_ips = datastore.get_default_next_hops(hostname)
-    _log.debug("Got nexthops: %s" % next_hop_ips)
-    netns.add_default_route(next_hop_ips[4], ep.temp_interface_name)
-    # TODO: check that nexthop exists for ipv6
-    netns.add_default_route(next_hop_ips[6], ep.temp_interface_name)
+    netns.add_default_route(ep.ipv4_gateway, ep.temp_interface_name)
+    if ep.ipv6_gateway:
+        netns.add_default_route(ep.ipv6_gateway, ep.temp_interface_name)
 
 
 def update(args):
