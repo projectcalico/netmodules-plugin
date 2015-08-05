@@ -37,3 +37,12 @@ run-etcd:
 	--name mesos-etcd quay.io/coreos/etcd:v2.0.11 \
 	--advertise-client-urls "http://$(LOCAL_IP_ENV):2379,http://127.0.0.1:4001" \
 	--listen-client-urls "http://0.0.0.0:2379,http://0.0.0.0:4001"
+
+ut:
+	# Use the `root` user, since code coverage requires the /code directory to
+	# be writable.  It may not be writable for the `user` account inside the
+	# container.
+	docker run --rm -v `pwd`/calico_mesos:/code -u root \
+	calico-mesos-builder bash -c \
+	'/tmp/etcd -data-dir=/tmp/default.etcd/ >/dev/null 2>&1 & \
+	nosetests tests/unit  -c nose.cfg'

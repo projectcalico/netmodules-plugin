@@ -16,11 +16,20 @@ import logging.handlers
 LOGFILE = "/var/log/calico/isolator.log"
 ORCHESTRATOR_ID = "mesos"
 
+ERROR_MISSING_COMMAND      = "Missing command"
+ERROR_MISSING_CONTAINER_ID = "Missing container-id"
+ERROR_MISSING_HOSTNAME     = "Missing hostname"
+ERROR_MISSING_IPV4_ADDRS   = "Missing ipv4_addrs"
+ERROR_MISSING_IPV6_ADDRS   = "Missing ipv6_addrs"
+ERROR_MISSING_PID          = "Missing pid"
+ERROR_UNKNOWN_COMMAND      = "Unknown command: %s"
+ERROR_MISSING_ARGS = "Missing args"
+
 datastore = IPAMClient()
 _log = logging.getLogger("CALICOMESOS")
 
 
-def main():
+def calico_mesos():
     stdin_raw_data = sys.stdin.read()
     _log.info("Received request: %s" % stdin_raw_data)
 
@@ -28,19 +37,19 @@ def main():
     try:
         stdin_json = json.loads(stdin_raw_data)
     except ValueError as e:
-        quit_with_error(str(e))
+        return error_message(str(e))
 
     # Extract command
     try:
         command = stdin_json['command']
     except KeyError:
-        quit_with_error("Missing command")
+        return error_message(ERROR_MISSING_COMMAND)
 
     # Extract args
     try:
         args = stdin_json['args']
     except KeyError:
-        quit_with_error("Missing args")
+        return error_message(ERROR_MISSING_ARGS)
 
     # Call command with args
     _log.debug("Executing %s" % command)
@@ -53,7 +62,7 @@ def main():
     elif command == 'cleanup':
         cleanup(args)
     else:
-        quit_with_error("Unknown command: %s" % command)
+        return error_message(ERROR_UNKNOWN_COMMAND % command)
 
 
 def setup_logging(logfile):
@@ -102,14 +111,14 @@ def prepare(args):
 
     # Validate Container ID
     if not container_id:
-        quit_with_error("Missing container-id")
+        return error_message(ERROR_MISSING_CONTAINER_ID)
     if not hostname:
-        quit_with_error("Missing hostname")
+        return error_message(ERROR_MISSING_HOSTNAME)
 
     # Validate IPv4 Addresses
     if not ipv4_addrs and ipv4_addrs != []:
         # IPv4 Addrs can be an empty list, but must be provided
-        quit_with_error("Missing ipv4_addrs")
+        return error_message(ERROR_MISSING_IPV4_ADDRS)
     else:
         # Confirm provided ipv4_addrs are actually IP addresses
         ipv4_addrs_validated = []
@@ -117,17 +126,17 @@ def prepare(args):
             try:
                 ip = IPAddress(ip_addr)
             except AddrFormatError:
-                quit_with_error("IP address %s could not be parsed: %s" % ip_addr)
+                return error_message("IP address %s could not be parsed: %s" % ip_addr)
 
             if ip.version == 6:
-                quit_with_error("IPv6 address must not be placed in IPv4 address field.")
+                return error_message("IPv6 address must not be placed in IPv4 address field.")
             else:
                 ipv4_addrs_validated.append(ip)
 
     # Validate IPv6 Addresses
     if not ipv6_addrs and ipv6_addrs != []:
         # IPv6 Addrs can be an empty list, but must be provided
-        quit_with_error("Missing ipv6_addrs")
+        return error_message("Missing ipv6_addrs")
     else:
         # Confirm provided ipv4_addrs are actually IP addresses
         ipv6_addrs_validated = []
@@ -135,10 +144,10 @@ def prepare(args):
             try:
                 ip = IPAddress(ip_addr)
             except AddrFormatError:
-                quit_with_error("IP address %s could not be parsed: %s" % ip_addr)
+                return error_message("IP address %s could not be parsed: %s" % ip_addr)
 
             if ip.version == 4:
-                quit_with_error("IPv4 address must not be placed in IPv6 address field.")
+                return error_message("IPv4 address must not be placed in IPv6 address field.")
             else:
                 ipv6_addrs_validated.append(ip)
 
@@ -178,10 +187,10 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
                 _log.debug('Using IP pool %s', pool)
                 break
         if not pool:
-            quit_with_error("Requested IP %s isn't in any configured pool. "
+            return error_message("Requested IP %s isn't in any configured pool. "
                             "Container %s"% (ip, container_id))
         if not datastore.assign_address(pool, ip):
-            quit_with_error("IP address couldn't be assigned for "
+            return error_message("IP address couldn't be assigned for "
                          "container %s, IP=%s" % (container_id, ip))
             # TODO: cleanup and unassign previous addresses?
 
@@ -198,10 +207,10 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
                 _log.debug('Using IP pool %s', pool)
                 break
         if not pool:
-            quit_with_error("Requested IP %s isn't in any configured pool. "
+            return error_message("Requested IP %s isn't in any configured pool. "
                             "Container %s"% (ip, container_id))
         if not datastore.assign_address(pool, ip):
-            quit_with_error("IP address couldn't be assigned for "
+            return error_message("IP address couldn't be assigned for "
                          "container %s, IP=%s" % (container_id, ip))
 
     # Create an endpoint
@@ -280,16 +289,14 @@ def isolate(args):
     pid = args.get("pid")
 
     if not container_id:
-        quit_with_error("Missing container-id")
+        return error_message(ERROR_MISSING_CONTAINER_ID)
     if not hostname:
-        quit_with_error("Missing hostname")
+        return error_message(ERROR_MISSING_HOSTNAME)
     if not pid:
-        quit_with_error("Missing pid")
+        return error_message(ERROR_MISSING_PID)
 
     _log.debug("Request validated. Executing")
-    _isolate(hostname, container_id, pid)
-    _log.debug("Request completed.")
-
+    return _isolate(hostname, container_id, pid)
 
 def _isolate(hostname, container_id, pid):
     """
@@ -324,10 +331,12 @@ def _isolate(hostname, container_id, pid):
     if ep.ipv6_gateway:
         netns.add_default_route(ep.ipv6_gateway, ep.temp_interface_name)
 
+    return error_message(None)
+
 
 def update(args):
     # TODO: implement Update
-    quit_with_error("Update is not yet implemented.")
+    return error_message("Update is not yet implemented.")
 
 
 def cleanup(args):
@@ -335,9 +344,9 @@ def cleanup(args):
     container_id = args.get("container-id")
 
     if not container_id:
-        quit_with_error("Missing container-id")
+        return error_message("Missing container-id")
     if not hostname:
-        quit_with_error("Missing hostname")
+        return error_message("Missing hostname")
 
     _cleanup(hostname, container_id)
 
@@ -373,17 +382,18 @@ def _cleanup(hostname, container_id):
     _log.info("Cleanup complete for container %s", container_id)
 
 
-def quit_with_error(msg=None):
+def error_message(msg=None):
     """
     Helper function to convert error messages into the JSON format, print
     to stdout, and then quit.
     """
-    error_msg = json.dumps({"error": msg})
-    sys.stdout.write(error_msg)
-    sys.exit(1)
+    return json.dumps({"error": msg})
+
 
 
 if __name__ == '__main__':
     setup_logging(LOGFILE)
-    main()
-    quit_with_error()
+    results = calico_mesos()
+    sys.stdout.write(results)
+    if results != error_message():
+        sys.exit(1)
