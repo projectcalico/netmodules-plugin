@@ -156,6 +156,24 @@ def prepare(args):
     _log.debug("Request completed.")
 
 
+def _reserve_ips(ip_addrs):
+    for ip in ip_addrs:
+        _log.debug('Attempting to assign IPv4 address %s', ip)
+
+        # Find the pool which this IP belongs to
+        pools = datastore.get_ip_pools(ip.version)
+        pool = None
+        for candidate_pool in pools:
+            if ip in candidate_pool:
+                pool = candidate_pool
+                _log.debug('Using IP pool %s', pool)
+                break
+        if not pool:
+            return error_message("Requested IP %s isn't in any configured pool."% ip)
+        if not datastore.assign_address(pool, ip):
+            return error_message("IP address couldn't be assigned: %s" % ip)
+
+
 def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
     """
     Prepare an endpoint and the virtual interface to which it will be assigned.
@@ -175,43 +193,9 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
     _log.info("IP: %s, Profile %s", ipv4_addrs, profiles)
 
     # Confirm the IPv4 Addresses are correctly within the pool, then reserve them.
-    for ip in ipv4_addrs:
-        _log.debug('Attempting to assign IPv4 address %s', ip)
-
-        # Find the pool which this IP belongs to
-        pools = datastore.get_ip_pools(4)
-        pool = None
-        for candidate_pool in pools:
-            if ip in candidate_pool:
-                pool = candidate_pool
-                _log.debug('Using IP pool %s', pool)
-                break
-        if not pool:
-            return error_message("Requested IP %s isn't in any configured pool. "
-                            "Container %s"% (ip, container_id))
-        if not datastore.assign_address(pool, ip):
-            return error_message("IP address couldn't be assigned for "
-                         "container %s, IP=%s" % (container_id, ip))
-            # TODO: cleanup and unassign previous addresses?
-
-    # Confirm the IPv6 Addresses are correctly within the pool, then reserve them.
-    for ip in ipv6_addrs:
-        _log.debug('Attempting to assign IPv6 address %s', ip)
-
-        # Find the pool which this IP belongs to
-        pools = datastore.get_ip_pools(6)
-        pool = None
-        for candidate_pool in pools:
-            if ip in candidate_pool:
-                pool = candidate_pool
-                _log.debug('Using IP pool %s', pool)
-                break
-        if not pool:
-            return error_message("Requested IP %s isn't in any configured pool. "
-                            "Container %s"% (ip, container_id))
-        if not datastore.assign_address(pool, ip):
-            return error_message("IP address couldn't be assigned for "
-                         "container %s, IP=%s" % (container_id, ip))
+    _reserve_ips(ipv4_addrs)
+    if ipv6_addrs:
+        _reserve_ips(ipv6_addrs)
 
     # Create an endpoint
     ep = Endpoint(hostname=hostname,
@@ -270,7 +254,7 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
     # (and its profiles) with Felix
     _log.info("Setting the endpoint.")
     datastore.set_endpoint(ep)
-    _log.info("Finished networking for container %s, IP=%s", container_id, ip)
+    _log.info("Finished networking for container %s", container_id)
 
 
 def isolate(args):
@@ -297,6 +281,7 @@ def isolate(args):
 
     _log.debug("Request validated. Executing")
     return _isolate(hostname, container_id, pid)
+
 
 def _isolate(hostname, container_id, pid):
     """
@@ -390,10 +375,10 @@ def error_message(msg=None):
     return json.dumps({"error": msg})
 
 
-
 if __name__ == '__main__':
     setup_logging(LOGFILE)
     results = calico_mesos()
+    if results == None:
+        results = error_message(None)
     sys.stdout.write(results)
-    if results != error_message():
-        sys.exit(1)
+
