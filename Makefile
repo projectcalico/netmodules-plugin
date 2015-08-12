@@ -8,7 +8,7 @@ ST_TO_RUN?=calico_mesos/tests/st/
 
 binary: dist/calico_isolator
 
-# Create the image that builds calico_mesos
+# Create the image that builds calico_isolator
 calico_mesos_builder.created: $(BUILD_FILES) $(PYCALICO)
 	cd build_calico_mesos; docker build -t calico/mesos-builder .
 	touch calico_mesos_builder.created

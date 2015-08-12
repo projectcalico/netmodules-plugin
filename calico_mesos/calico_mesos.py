@@ -8,6 +8,7 @@ from pycalico.ipam import IPAMClient
 from pycalico.datastore import Rules, Rule, Endpoint
 from pycalico.util import get_host_ips
 from netaddr import IPAddress, AddrFormatError
+from pycalico.datastore_errors import PoolNotFound
 import json
 import logging
 import logging.handlers
@@ -53,9 +54,7 @@ def calico_mesos():
 
     # Call command with args
     _log.debug("Executing %s" % command)
-    if command == 'prepare':
-        prepare(args)
-    elif command == 'isolate':
+    if command == 'isolate':
         isolate(args)
     elif command == 'update':
         update(args)
@@ -86,7 +85,7 @@ def setup_logging(logfile):
     netns.setup_logging(logfile)
 
 
-def prepare(args):
+def isolate(args):
     """
     Toplevel function which validates and sanitizes json args into variables
     which can be passed to _prepare.
@@ -104,6 +103,7 @@ def prepare(args):
     """
     hostname = args.get("hostname")
     container_id = args.get("container-id")
+    pid = args.get("pid")
     ipv4_addrs = args.get("ipv4_addrs")
     ipv6_addrs = args.get("ipv6_addrs")
     netgroups = args.get("netgroups")
@@ -114,6 +114,8 @@ def prepare(args):
         return error_message(ERROR_MISSING_CONTAINER_ID)
     if not hostname:
         return error_message(ERROR_MISSING_HOSTNAME)
+    if not pid:
+        return error_message(ERROR_MISSING_PID)
 
     # Validate IPv4 Addresses
     if not ipv4_addrs and ipv4_addrs != []:
@@ -152,34 +154,40 @@ def prepare(args):
                 ipv6_addrs_validated.append(ip)
 
     _log.debug("Request validated. Executing")
-    _prepare(hostname, container_id, ipv4_addrs_validated, ipv6_addrs_validated, netgroups, labels)
+    _isolate(hostname, pid, container_id, ipv4_addrs_validated, ipv6_addrs_validated, netgroups, labels)
     _log.debug("Request completed.")
 
 
-def _reserve_ips(ip_addrs):
-    for ip in ip_addrs:
-        _log.debug('Attempting to assign IPv4 address %s', ip)
+def create_profile_with_default_mesos_rules(profile):
+    _log.info("Autocreating profile %s", profile)
+    datastore.create_profile(profile)
+    prof = datastore.get_profile(profile)
+    # Set up the profile rules to allow incoming connections from the host
+    # since the slave process will be running there.
+    # Also allow connections from others in the profile.
+    # Deny other connections (default, so not explicitly needed).
+    # TODO: confirm that we're not getting more interfaces than we bargained for
+    ipv4 = get_host_ips(4, exclude=["docker0"]).pop()
+    host_net = ipv4 + "/32"
+    _log.info("adding accept rule for %s" % host_net)
+    allow_slave = Rule(action="allow", src_net=host_net)
+    allow_self = Rule(action="allow", src_tag=profile)
+    allow_all = Rule(action="allow")
+    prof.rules = Rules(id=profile,
+                       inbound_rules=[allow_slave, allow_self],
+                       outbound_rules=[allow_all])
+    datastore.profile_update_rules(prof)
 
-        # Find the pool which this IP belongs to
-        pools = datastore.get_ip_pools(ip.version)
-        pool = None
-        for candidate_pool in pools:
-            if ip in candidate_pool:
-                pool = candidate_pool
-                _log.debug('Using IP pool %s', pool)
-                break
-        if not pool:
-            return error_message("Requested IP %s isn't in any configured pool."% ip)
-        if not datastore.assign_address(pool, ip):
-            return error_message("IP address couldn't be assigned: %s" % ip)
 
-
-def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
+def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
     """
-    Prepare an endpoint and the virtual interface to which it will be assigned.
-    Interface is not configured here since any IP address and gateway settings will
-    be dropped when the interface is moved into the new namepace in isolate. Instead,
-    just the endpoint is created and saved.
+    Configure networking for a container.
+
+    This function performs the following steps:
+    1.) Create endpoint in memory
+    2.) Fill endpoint with data
+    3.) Configure network to match the filled endpoint's specifications
+    4.) Write endpoint to etcd
 
     :param hostname: Hostname of the slave which the container is running on
     :param container_id: The container's ID
@@ -192,131 +200,45 @@ def _prepare(hostname, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
     _log.info("Preparing network for Container with ID %s", container_id)
     _log.info("IP: %s, Profile %s", ipv4_addrs, profiles)
 
-    # Confirm the IPv4 Addresses are correctly within the pool, then reserve them.
-    _reserve_ips(ipv4_addrs)
-    if ipv6_addrs:
-        _reserve_ips(ipv6_addrs)
 
-    # Create an endpoint
-    ep = Endpoint(hostname=hostname,
-                  orchestrator_id=ORCHESTRATOR_ID,
-                  workload_id=container_id,
-                  endpoint_id=uuid.uuid1().hex,
-                  state="active",
-                  mac=None)
+    # Exit if the endpoint has already been configured
+    if len(datastore.get_endpoints(hostname=hostname,
+                                   orchestrator_id=ORCHESTRATOR_ID,
+                                   workload_id=container_id)) == 1:
+        return error_message("This container has already been configured with Calico Networking.")
 
-    # Create the veth
-    _log.info("Creating veth")
-    netns.create_veth(ep.name, ep.temp_interface_name)
+    # Reserve IP addresses in etcd
+    for ip in ipv4_addrs:
+        try:
+            if not datastore.assign_address(None, ip):
+                return error_message("IP has already been assigned: %s" % ip)
+        except PoolNotFound:
+            return error_message("IP %s does not belong to any configured pool." % ip)
 
-    # Assign IPs to the endpoint
-    ep.ipv4_nets = set(ipv4_addrs)
-    ep.ipv6_nets = set(ipv6_addrs)
+    # Create the endpoint
+    ep = datastore.create_endpoint(hostname=hostname,
+                                   orchestrator_id=ORCHESTRATOR_ID,
+                                   workload_id=container_id,
+                                   ip_list=ipv4_addrs)
 
-    # Assign default gateways to the endpoint
-    next_hop_ips = datastore.get_default_next_hops(hostname)
-    ep.ipv4_gateway = next_hop_ips[4]
-    if next_hop_ips.has_key(6):
-        ep.ipv6_gateway = next_hop_ips[6]
-
-    # Assign profiles on the endpoint
+    # Create any profiles in etcd that do not already exist
     if profiles == []:
         profiles = ["mesos"]
     _log.info("Assigning Profiles: %s" % profiles)
     for profile in profiles:
         # Create profile with default rules, if it does not exist
         if not datastore.profile_exists(profile):
-            _log.info("Autocreating profile %s", profile)
-            datastore.create_profile(profile)
-            prof = datastore.get_profile(profile)
+            create_profile_with_default_mesos_rules(profile)
 
-            # Set up the profile rules to allow incoming connections from the host
-            # since the slave process will be running there.
-            # Also allow connections from others in the profile.
-            # Deny other connections (default, so not explicitly needed).
-            # TODO: confirm that we're not getting more interfaces than we bargained for
-            ipv4 = get_host_ips(4, exclude=["docker0"]).pop()
-            host_net = ipv4 + "/32"
-            _log.info("adding accept rule for %s" % host_net)
-            allow_slave = Rule(action="allow", src_net=host_net)
-            allow_self = Rule(action="allow", src_tag=profile)
-            allow_all = Rule(action="allow")
-            prof.rules = Rules(id=profile,
-                               inbound_rules=[allow_slave, allow_self],
-                               outbound_rules=[allow_all])
-            datastore.profile_update_rules(prof)
+    # Set profiles on the endpoint
+    _log.info("Adding container %s to profile %s", container_id, profile)
+    ep.profile_ids = profiles
 
-        # Assign profile to endpoint
-        _log.info("Adding container %s to profile %s", container_id, profile)
-        ep.profile_ids.append(profile)
+    # Call through to complete the network setup matching this endpoint
+    ep.mac = ep.provision_veth(ns_pid, container_id)
 
-    # Save the endpoint into the datastore, thereby registering it
-    # (and its profiles) with Felix
-    _log.info("Setting the endpoint.")
     datastore.set_endpoint(ep)
     _log.info("Finished networking for container %s", container_id)
-
-
-def isolate(args):
-    """
-    Toplevel function which validates and sanitizes json args into variables
-    which can be passed to _isolate.
-
-    "args": {
-        "hostname": "slave-H3A-1", # Required
-        "container-id": "ba11f1de-fc4d-46fd-9f15-424f4ef05a3a", # Required
-        "pid": 3789 # Required
-    }
-    """
-    hostname = args.get("hostname")
-    container_id = args.get("container-id")
-    pid = args.get("pid")
-
-    if not container_id:
-        return error_message(ERROR_MISSING_CONTAINER_ID)
-    if not hostname:
-        return error_message(ERROR_MISSING_HOSTNAME)
-    if not pid:
-        return error_message(ERROR_MISSING_PID)
-
-    _log.debug("Request validated. Executing")
-    return _isolate(hostname, container_id, pid)
-
-
-def _isolate(hostname, container_id, pid):
-    """
-    Push container-end of veth pair into container namespace
-    Assign IP address and default routes on container side
-
-    :param hostname: Hostname of the slave which the container is running on
-    :param container_id: The container's ID
-    :param pid: Process ID of the new network namespace which the container's
-    interface should be pushed into.
-    """
-    _log.info("Isolating executor with Container ID %s, PID %s.",
-              container_id, pid)
-
-    # TODO: specify endpoint_id?
-    ep = datastore.get_endpoint(hostname=hostname,
-                                orchestrator_id=ORCHESTRATOR_ID,
-                                workload_id=container_id)
-    ep = Endpoint()
-    # TODO: confirm that eth0 is the correct interface name
-    interface = 'eth0'
-    netns.move_veth_into_ns(pid, ep.temp_interface_name, interface)
-
-    # Assign IP Addresses
-    for ip in ep.ipv4_nets + ep.ipv6_nets:
-        _log.info("Adding %s to %s" % (ip, ep.temp_interface_name))
-        netns.add_ip_to_veth(ip, ep.temp_interface_name)
-
-    # Assign default routes on the interface
-    _log.info("Adding default route to interface")
-    netns.add_default_route(ep.ipv4_gateway, ep.temp_interface_name)
-    if ep.ipv6_gateway:
-        netns.add_default_route(ep.ipv6_gateway, ep.temp_interface_name)
-
-    return error_message(None)
 
 
 def update(args):
@@ -381,4 +303,3 @@ if __name__ == '__main__':
     if results == None:
         results = error_message(None)
     sys.stdout.write(results)
-

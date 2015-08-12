@@ -3,9 +3,13 @@ import os
 import json
 import subprocess
 import etcd
+import logging
 
 ETCD_AUTHORITY_DEFAULT = "127.0.0.1:4001"
 ETCD_AUTHORITY_ENV = "ETCD_AUTHORITY"
+
+sh_log = logging.getLogger('sh')
+sh_log.setLevel('WARN')
 
 
 class TestBase(TestCase):

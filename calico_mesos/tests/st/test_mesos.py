@@ -34,12 +34,12 @@ class TestMesos(TestBase):
             ip('link', 'del', 'dev', interface)
 
 
-    def test_prepare(self):
-        # Test prepare
+    def test_isolate(self):
+        # Test isolate
         hostname = socket.gethostname()
 
         indata = {
-            "command": "prepare",
+            "command": "isolate",
             "args": {
                 "hostname": hostname,
                 "container-id": self.container_id,
@@ -49,7 +49,8 @@ class TestMesos(TestBase):
                 "labels": {
                     "rack": "3A",
                     "pop": "houston"
-                }
+                },
+                "pid": 3789
             }
         }
 
