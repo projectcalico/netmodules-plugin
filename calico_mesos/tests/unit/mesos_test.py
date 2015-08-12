@@ -100,18 +100,6 @@ class TestDispatch(unittest.TestCase):
         calico_mesos.calico_mesos()
         self.assertTrue(m_isolate.called)
 
-    @patch('calico_mesos.update')
-    @patch('sys.stdin')
-    def test_distpach_calls_update(self, m_stdin, m_update):
-        # Load stdin.read to return input string
-        args = {"args": {},
-                "command": "update"}
-        m_stdin.read.return_value = json.dumps(args)
-
-        # Call function
-        calico_mesos.calico_mesos()
-        self.assertTrue(m_update.called)
-
     @patch('calico_mesos.cleanup')
     @patch('sys.stdin')
     def test_distpach_calls_cleanup(self, m_stdin, m_cleanup):

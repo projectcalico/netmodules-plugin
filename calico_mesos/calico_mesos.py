@@ -56,8 +56,6 @@ def calico_mesos():
     _log.debug("Executing %s" % command)
     if command == 'isolate':
         isolate(args)
-    elif command == 'update':
-        update(args)
     elif command == 'cleanup':
         cleanup(args)
     else:
@@ -239,11 +237,6 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
 
     datastore.set_endpoint(ep)
     _log.info("Finished networking for container %s", container_id)
-
-
-def update(args):
-    # TODO: implement Update
-    return error_message("Update is not yet implemented.")
 
 
 def cleanup(args):
