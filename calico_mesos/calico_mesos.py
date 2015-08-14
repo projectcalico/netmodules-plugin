@@ -15,7 +15,7 @@ LOGFILE = "/var/log/calico/isolator.log"
 ORCHESTRATOR_ID = "mesos"
 
 ERROR_MISSING_COMMAND      = "Missing command"
-ERROR_MISSING_CONTAINER_ID = "Missing container-id"
+ERROR_MISSING_CONTAINER_ID = "Missing container_id"
 ERROR_MISSING_HOSTNAME     = "Missing hostname"
 ERROR_MISSING_IPV4_ADDRS   = "Missing ipv4_addrs"
 ERROR_MISSING_IPV6_ADDRS   = "Missing ipv6_addrs"
@@ -91,7 +91,7 @@ def isolate(args):
 
     "args": {
         "hostname": "slave-H3A-1", # Required
-        "container-id": "ba11f1de-fc4d-46fd-9f15-424f4ef05a3a", # Required
+        "container_id": "ba11f1de-fc4d-46fd-9f15-424f4ef05a3a", # Required
         "ipv4_addrs": ["192.168.23.4"], # Required, can be []
         "ipv6_addrs": ["2001:3ac3:f90b:1111::1"], # Required, can be []
         "netgroups": ["prod", "frontend"], # Required.
@@ -101,7 +101,7 @@ def isolate(args):
     }
     """
     hostname = args.get("hostname")
-    container_id = args.get("container-id")
+    container_id = args.get("container_id")
     pid = args.get("pid")
     ipv4_addrs = args.get("ipv4_addrs")
     ipv6_addrs = args.get("ipv6_addrs")
@@ -234,7 +234,7 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
 
 def cleanup(args):
     hostname = args.get("hostname")
-    container_id = args.get("container-id")
+    container_id = args.get("container_id")
 
     if not container_id:
         raise IsolatorException("Missing container_id")
