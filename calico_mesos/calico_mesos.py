@@ -35,19 +35,19 @@ def calico_mesos():
     try:
         stdin_json = json.loads(stdin_raw_data)
     except ValueError as e:
-        return error_message(str(e))
+        raise IsolatorException(str(e))
 
     # Extract command
     try:
         command = stdin_json['command']
     except KeyError:
-        return error_message(ERROR_MISSING_COMMAND)
+        raise IsolatorException(ERROR_MISSING_COMMAND)
 
     # Extract args
     try:
         args = stdin_json['args']
     except KeyError:
-        return error_message(ERROR_MISSING_ARGS)
+        raise IsolatorException(ERROR_MISSING_ARGS)
 
     # Call command with args
     _log.debug("Executing %s" % command)
@@ -60,7 +60,7 @@ def calico_mesos():
     elif command == 'release':
         return release(args)
     else:
-        return error_message(ERROR_UNKNOWN_COMMAND % command)
+        raise IsolatorException(ERROR_UNKNOWN_COMMAND % command)
 
 
 def setup_logging(logfile):
@@ -110,16 +110,16 @@ def isolate(args):
 
     # Validate Container ID
     if not container_id:
-        return error_message(ERROR_MISSING_CONTAINER_ID)
+        raise IsolatorException(ERROR_MISSING_CONTAINER_ID)
     if not hostname:
-        return error_message(ERROR_MISSING_HOSTNAME)
+        raise IsolatorException(ERROR_MISSING_HOSTNAME)
     if not pid:
-        return error_message(ERROR_MISSING_PID)
+        raise IsolatorException(ERROR_MISSING_PID)
 
     # Validate IPv4 Addresses
     if not ipv4_addrs and ipv4_addrs != []:
         # IPv4 Addrs can be an empty list, but must be provided
-        return error_message(ERROR_MISSING_IPV4_ADDRS)
+        raise IsolatorException(ERROR_MISSING_IPV4_ADDRS)
     else:
         # Confirm provided ipv4_addrs are actually IP addresses
         ipv4_addrs_validated = []
@@ -127,17 +127,17 @@ def isolate(args):
             try:
                 ip = IPAddress(ip_addr)
             except AddrFormatError:
-                return error_message("IP address %s could not be parsed: %s" % ip_addr)
+                raise IsolatorException("IP address %s could not be parsed: %s" % ip_addr)
 
             if ip.version == 6:
-                return error_message("IPv6 address must not be placed in IPv4 address field.")
+                raise IsolatorException("IPv6 address must not be placed in IPv4 address field.")
             else:
                 ipv4_addrs_validated.append(ip)
 
     # Validate IPv6 Addresses
     if not ipv6_addrs and ipv6_addrs != []:
         # IPv6 Addrs can be an empty list, but must be provided
-        return error_message("Missing ipv6_addrs")
+        raise IsolatorException("Missing ipv6_addrs")
     else:
         # Confirm provided ipv4_addrs are actually IP addresses
         ipv6_addrs_validated = []
@@ -145,10 +145,10 @@ def isolate(args):
             try:
                 ip = IPAddress(ip_addr)
             except AddrFormatError:
-                return error_message("IP address %s could not be parsed: %s" % ip_addr)
+                raise IsolatorException("IP address %s could not be parsed: %s" % ip_addr)
 
             if ip.version == 4:
-                return error_message("IPv4 address must not be placed in IPv6 address field.")
+                raise IsolatorException("IPv4 address must not be placed in IPv6 address field.")
             else:
                 ipv6_addrs_validated.append(ip)
 
@@ -204,7 +204,7 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
     if len(datastore.get_endpoints(hostname=hostname,
                                    orchestrator_id=ORCHESTRATOR_ID,
                                    workload_id=container_id)) == 1:
-        return error_message("This container has already been configured with Calico Networking.")
+        raise IsolatorException("This container has already been configured with Calico Networking.")
 
     # Create the endpoint
     ep = datastore.create_endpoint(hostname=hostname,
@@ -237,9 +237,9 @@ def cleanup(args):
     container_id = args.get("container-id")
 
     if not container_id:
-        return error_message("Missing container-id")
+        raise IsolatorException("Missing container_id")
     if not hostname:
-        return error_message("Missing hostname")
+        raise IsolatorException("Missing hostname")
 
     _cleanup(hostname, container_id)
 
@@ -300,25 +300,25 @@ def allocate(args):
 
     # Validations
     if not uid:
-        return error_message("Missing uid")
+        raise IsolatorException("Missing uid")
     if not isinstance(uid, (str, unicode)):
-        return error_message("uid must be a string, not %s", uid)
+        raise IsolatorException("uid must be a string, not %s", uid)
     try:
         # Convert to string since libcalico requires uids to be strings
         uid = str(uid)
     except ValueError:
-        return error_message("Invalid UID: %s" % uid)
+        raise IsolatorException("Invalid UID: %s" % uid)
 
     if hostname is None:
-        return error_message("Missing hostname")
+        raise IsolatorException("Missing hostname")
     if num_ipv4 is None:
-        return error_message("Missing num_ipv4")
+        raise IsolatorException("Missing num_ipv4")
     if num_ipv6 is None:
-        return error_message("Missing num_ipv6")
+        raise IsolatorException("Missing num_ipv6")
     if not isinstance(num_ipv4, (int, long)):
-        return error_message("num_ip4 must be a number, not %s" % num_ipv4)
+        raise IsolatorException("num_ip4 must be a number, not %s" % num_ipv4)
     if not isinstance(num_ipv6, (int, long)):
-        return error_message("num_ip4 must be a number, not %s" % num_ipv6)
+        raise IsolatorException("num_ip4 must be a number, not %s" % num_ipv6)
 
     return _allocate(num_ipv4, num_ipv6, hostname, uid)
 
@@ -339,18 +339,14 @@ def _allocate(num_ipv4, num_ipv6, hostname, uid):
         "error": None  # Not None indicates error and contains error message.
     }
     """
-    try:
-        result = datastore.auto_assign_ips(num_ipv4, num_ipv6, uid, {},
-                                           hostname=hostname)
-        ipv4_strs = [str(ip) for ip in result[0]]
-        ipv6_strs = [str(ip) for ip in result[1]]
-        result_json = {"ipv4": ipv4_strs,
-                       "ipv6": ipv6_strs,
-                       "error": None}
-        return json.dumps(result_json)
-    except Exception as e:
-        return error_message("Unhandled error %s\n%s" %
-                             (str(e), sys.exc_info()[2]))
+    result = datastore.auto_assign_ips(num_ipv4, num_ipv6, uid, {},
+                                       hostname=hostname)
+    ipv4_strs = [str(ip) for ip in result[0]]
+    ipv6_strs = [str(ip) for ip in result[1]]
+    result_json = {"ipv4": ipv4_strs,
+                   "ipv6": ipv6_strs,
+                   "error": None}
+    return json.dumps(result_json)
 
 
 def release(args):
@@ -374,7 +370,7 @@ def release(args):
 
     if uid is None:
         if ips is None:
-            return error_message("Must supply either uid or ips.")
+            raise IsolatorException("Must supply either uid or ips.")
         else:
             # Validate the IPs.
             ips_validated = set()
@@ -382,7 +378,7 @@ def release(args):
                 try:
                     ip = IPAddress(ip_str)
                 except (AddrFormatError, ValueError):
-                    return error_message(
+                    raise IsolatorException(
                         "IP address %s could not be parsed: %s" % ip_str)
                 else:
                     ips_validated.add(ip)
@@ -392,10 +388,10 @@ def release(args):
     else:
         # uid supplied.
         if ips is not None:
-            return error_message("Supply either uid or ips, not both.")
+            raise IsolatorException("Supply either uid or ips, not both.")
         else:
             if not isinstance(uid, (str, unicode)):
-                return error_message("uid must be a string, not %s", uid)
+                raise IsolatorException("uid must be a string, not %s", uid)
             # uid validated.
             return _release_uid(uid)
 
@@ -405,37 +401,21 @@ def _release_ips(ips):
     Release the given IPs using the data store.
 
     :param ips: Set of IPAddress objects to release.
-    :return: JSON serialized result in the following format
-    {
-        "error": None # or, error message describing the problem
-    }
+    :return: None
     """
     # release_ips returns a set of addresses that were already not allocated
     # when this function was called.  But, Mesos doesn't consume that
     # information, so we ignore it.
-    try:
-        _ = datastore.release_ips(ips)
-        return error_message(None)  # Success; no error
-    except Exception as e:
-        return error_message("Unhandled error %s\n%s" %
-                             (str(e), sys.exc_info()[2]))
+    _ = datastore.release_ips(ips)
 
 
 def _release_uid(uid):
     """
     Release all IP addresses with the given unique ID using the data store.
     :param uid: The unique ID used to allocate the IPs.
-    :return: JSON-serialized result in the following format
-    {
-        "error": None # or, error message describing the problem
-    }
+    :return: None
     """
-    try:
-        _ = datastore.release_ip_by_handle(uid)
-        return error_message(None)  # Success; no error
-    except Exception as e:
-        return error_message("Unhandled error %s\n%s" %
-                             (str(e), sys.exc_info()[2]))
+    _ = datastore.release_ip_by_handle(uid)
 
 
 def error_message(msg=None):
@@ -446,9 +426,21 @@ def error_message(msg=None):
     return json.dumps({"error": msg})
 
 
+class IsolatorException(Exception):
+    pass
+
 if __name__ == '__main__':
     setup_logging(LOGFILE)
-    results = calico_mesos()
-    if results is None:
-        results = error_message(None)
-    sys.stdout.write(results)
+    try:
+        response = calico_mesos()
+    except IsolatorException as e:
+        sys.stdout.write(error_message(str(e)))
+        sys.exit(1)
+    except Exception as e:
+        import traceback
+        sys.stdout.write(error_message("Unhandled error %s\n%s" %
+                         (str(e), traceback.format_exc())))
+        sys.exit(1)
+    else:
+        sys.stdout.write(error_message(response))
+        sys.exit(0)
