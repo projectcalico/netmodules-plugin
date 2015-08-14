@@ -17,8 +17,6 @@ ORCHESTRATOR_ID = "mesos"
 ERROR_MISSING_COMMAND      = "Missing command"
 ERROR_MISSING_CONTAINER_ID = "Missing container_id"
 ERROR_MISSING_HOSTNAME     = "Missing hostname"
-ERROR_MISSING_IPV4_ADDRS   = "Missing ipv4_addrs"
-ERROR_MISSING_IPV6_ADDRS   = "Missing ipv6_addrs"
 ERROR_MISSING_PID          = "Missing pid"
 ERROR_UNKNOWN_COMMAND      = "Unknown command: %s"
 ERROR_MISSING_ARGS = "Missing args"
@@ -92,8 +90,8 @@ def isolate(args):
     "args": {
         "hostname": "slave-H3A-1", # Required
         "container_id": "ba11f1de-fc4d-46fd-9f15-424f4ef05a3a", # Required
-        "ipv4_addrs": ["192.168.23.4"], # Required, can be []
-        "ipv6_addrs": ["2001:3ac3:f90b:1111::1"], # Required, can be []
+        "ipv4_addrs": ["192.168.23.4"],
+        "ipv6_addrs": ["2001:3ac3:f90b:1111::1"],
         "netgroups": ["prod", "frontend"], # Required.
         "labels": {  # Optional.
             "rack": "3A",
@@ -117,9 +115,8 @@ def isolate(args):
         raise IsolatorException(ERROR_MISSING_PID)
 
     # Validate IPv4 Addresses
-    if not ipv4_addrs and ipv4_addrs != []:
-        # IPv4 Addrs can be an empty list, but must be provided
-        raise IsolatorException(ERROR_MISSING_IPV4_ADDRS)
+    if not ipv4_addrs:
+        ipv4_addrs_validated = []
     else:
         # Confirm provided ipv4_addrs are actually IP addresses
         ipv4_addrs_validated = []
@@ -135,9 +132,8 @@ def isolate(args):
                 ipv4_addrs_validated.append(ip)
 
     # Validate IPv6 Addresses
-    if not ipv6_addrs and ipv6_addrs != []:
-        # IPv6 Addrs can be an empty list, but must be provided
-        raise IsolatorException("Missing ipv6_addrs")
+    if not ipv6_addrs:
+        ipv6_addrs_validated = []
     else:
         # Confirm provided ipv4_addrs are actually IP addresses
         ipv6_addrs_validated = []
@@ -226,7 +222,7 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
     ep.profile_ids = profiles
 
     # Call through to complete the network setup matching this endpoint
-    ep.mac = ep.provision_veth(ns_pid, container_id)
+    ep.mac = ep.provision_veth(ns_pid, "eth0")
 
     datastore.set_endpoint(ep)
     _log.info("Finished networking for container %s", container_id)
@@ -256,7 +252,7 @@ def _cleanup(hostname, container_id):
         assert(net.size == 1)
         ip = net.ip
         _log.info("Attempting to un-allocate IP %s", ip)
-        pools = datastore.get_ip_pools("v%s" % ip.version)
+        pools = datastore.get_ip_pools(ip.version)
         for pool in pools:
             if ip in pool:
                 # Ignore failure to unassign address, since we're not
@@ -266,7 +262,7 @@ def _cleanup(hostname, container_id):
 
     # Remove the endpoint
     _log.info("Removing veth for endpoint %s", endpoint.endpoint_id)
-    netns.remove_endpoint(endpoint.endpoint_id)
+    datastore.remove_endpoint(endpoint)
 
     # Remove the container from the datastore.
     datastore.remove_workload(hostname=hostname,
@@ -442,5 +438,7 @@ if __name__ == '__main__':
                          (str(e), traceback.format_exc())))
         sys.exit(1)
     else:
+        if response == None:
+            response = error_message(None)
         sys.stdout.write(response)
         sys.exit(0)
