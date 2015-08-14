@@ -442,5 +442,5 @@ if __name__ == '__main__':
                          (str(e), traceback.format_exc())))
         sys.exit(1)
     else:
-        sys.stdout.write(error_message(response))
+        sys.stdout.write(response)
         sys.exit(0)
