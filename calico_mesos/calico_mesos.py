@@ -145,7 +145,7 @@ def isolate(args):
             try:
                 ip = IPAddress(ip_addr)
             except AddrFormatError:
-                raise IsolatorException("IP address %s could not be parsed: %s" % ip_addr)
+                raise IsolatorException("IP address could not be parsed: %s" % ip_addr)
 
             if ip.version == 4:
                 raise IsolatorException("IPv4 address must not be placed in IPv6 address field.")
