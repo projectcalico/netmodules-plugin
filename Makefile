@@ -1,15 +1,15 @@
 .PHONEY: binary
 
 SRCDIR=calico_mesos
-BUILD_FILES=build_calico_mesos
-PYCALICO=$(wildcard build_calico_mesos/libcalico/*.py)
+BUILD_DIR=build_calico_mesos
+PYCALICO=$(wildcard $(BUILD_DIR)/libcalico/calico_containers/pycalico/*.py)
 CALICO_MESOS=$(wildcard $(SRCDIR)/calico_mesos.py)
 ST_TO_RUN?=calico_mesos/tests/st/
 
 binary: dist/calico_isolator
 
 # Create the image that builds calico_isolator
-calico_mesos_builder.created: $(BUILD_FILES) $(PYCALICO)
+calico_mesos_builder.created: $(BUILD_DIR) $(PYCALICO)
 	cd build_calico_mesos; docker build -t calico/mesos-builder .
 	touch calico_mesos_builder.created
 
