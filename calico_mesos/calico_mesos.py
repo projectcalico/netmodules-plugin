@@ -1,14 +1,11 @@
 import sys
 import os
 import errno
-import uuid
-import traceback
 from pycalico import netns
 from pycalico.ipam import IPAMClient
 from pycalico.datastore import Rules, Rule, Endpoint
 from pycalico.util import get_host_ips
 from netaddr import IPAddress, AddrFormatError
-from pycalico.datastore_errors import PoolNotFound
 import json
 import logging
 import logging.handlers
@@ -58,6 +55,10 @@ def calico_mesos():
         isolate(args)
     elif command == 'cleanup':
         cleanup(args)
+    elif command == 'allocate':
+        return allocate(args)
+    elif command == 'release':
+        return release(args)
     else:
         return error_message(ERROR_UNKNOWN_COMMAND % command)
 
@@ -205,14 +206,6 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
                                    workload_id=container_id)) == 1:
         return error_message("This container has already been configured with Calico Networking.")
 
-    # Reserve IP addresses in etcd
-    for ip in ipv4_addrs:
-        try:
-            if not datastore.assign_address(None, ip):
-                return error_message("IP has already been assigned: %s" % ip)
-        except PoolNotFound:
-            return error_message("IP %s does not belong to any configured pool." % ip)
-
     # Create the endpoint
     ep = datastore.create_endpoint(hostname=hostname,
                                    orchestrator_id=ORCHESTRATOR_ID,
@@ -282,6 +275,169 @@ def _cleanup(hostname, container_id):
     _log.info("Cleanup complete for container %s", container_id)
 
 
+def allocate(args):
+    """
+    Toplevel function which validates and sanitizes json args into variables
+    which can be passed to _allocate.
+
+    args = {
+        "hostname": "slave-0-1", # Required
+        "num_ipv4": 1, # Required.
+        "num_ipv6": 2, # Required.
+        "uid": "0cd47986-24ad-4c00-b9d3-5db9e5c02028", # Required
+        "netgroups": ["prod", "frontend"], # Optional.
+        "labels": {  # Optional.
+            "rack": "3A",
+            "pop": "houston"
+        }
+    }
+
+    """
+    hostname = args.get("hostname")
+    uid = args.get("uid")
+    num_ipv4 = args.get("num_ipv4")
+    num_ipv6 = args.get("num_ipv6")
+
+    # Validations
+    if not uid:
+        return error_message("Missing uid")
+    if not isinstance(uid, (str, unicode)):
+        return error_message("uid must be a string, not %s", uid)
+    try:
+        # Convert to string since libcalico requires uids to be strings
+        uid = str(uid)
+    except ValueError:
+        return error_message("Invalid UID: %s" % uid)
+
+    if hostname is None:
+        return error_message("Missing hostname")
+    if num_ipv4 is None:
+        return error_message("Missing num_ipv4")
+    if num_ipv6 is None:
+        return error_message("Missing num_ipv6")
+    if not isinstance(num_ipv4, (int, long)):
+        return error_message("num_ip4 must be a number, not %s" % num_ipv4)
+    if not isinstance(num_ipv6, (int, long)):
+        return error_message("num_ip4 must be a number, not %s" % num_ipv6)
+
+    return _allocate(num_ipv4, num_ipv6, hostname, uid)
+
+
+def _allocate(num_ipv4, num_ipv6, hostname, uid):
+    """
+    Allocate IP addresses from the data store.
+    :param num_ipv4: Number of IPv4 addresses to request.
+    :param num_ipv6: Number of IPv6 addresses to request.
+    :param hostname: The hostname of this host.
+    :param uid: A unique ID, which is indexed by the IPAM module and can be
+    used to release all addresses with the uid.
+    :return: JSON-serialized dictionary of the result in the following
+    format:
+    {
+        "ipv4": ["192.168.23.4"],
+        "ipv6": ["2001:3ac3:f90b:1111::1", "2001:3ac3:f90b:1111::2"],
+        "error": None  # Not None indicates error and contains error message.
+    }
+    """
+    try:
+        result = datastore.auto_assign_ips(num_ipv4, num_ipv6, uid, {},
+                                           hostname=hostname)
+        ipv4_strs = [str(ip) for ip in result[0]]
+        ipv6_strs = [str(ip) for ip in result[1]]
+        result_json = {"ipv4": ipv4_strs,
+                       "ipv6": ipv6_strs,
+                       "error": None}
+        return json.dumps(result_json)
+    except Exception as e:
+        return error_message("Unhandled error %s\n%s" %
+                             (str(e), sys.exc_info()[2]))
+
+
+def release(args):
+    """
+    Toplevel function which validates and sanitizes json args into variables
+    which can be passed to _release_uid or _release_ips.
+
+    args: {
+        "uid": "0cd47986-24ad-4c00-b9d3-5db9e5c02028",
+        # OR
+        "ips": ["192.168.23.4", "2001:3ac3:f90b:1111::1"] # OK to mix 6 & 4
+    }
+
+    Must include a uid or ips, but not both.  If a uid is passed, release all
+    addresses with that uid.
+
+    If a list of ips is passed, release those IPs.
+    """
+    uid = args.get("uid")
+    ips = args.get("ips")
+
+    if uid is None:
+        if ips is None:
+            return error_message("Must supply either uid or ips.")
+        else:
+            # Validate the IPs.
+            ips_validated = set()
+            for ip_str in ips:
+                try:
+                    ip = IPAddress(ip_str)
+                except (AddrFormatError, ValueError):
+                    return error_message(
+                        "IP address %s could not be parsed: %s" % ip_str)
+                else:
+                    ips_validated.add(ip)
+            # All IPs validated, call procedure
+            return _release_ips(ips_validated)
+
+    else:
+        # uid supplied.
+        if ips is not None:
+            return error_message("Supply either uid or ips, not both.")
+        else:
+            if not isinstance(uid, (str, unicode)):
+                return error_message("uid must be a string, not %s", uid)
+            # uid validated.
+            return _release_uid(uid)
+
+
+def _release_ips(ips):
+    """
+    Release the given IPs using the data store.
+
+    :param ips: Set of IPAddress objects to release.
+    :return: JSON serialized result in the following format
+    {
+        "error": None # or, error message describing the problem
+    }
+    """
+    # release_ips returns a set of addresses that were already not allocated
+    # when this function was called.  But, Mesos doesn't consume that
+    # information, so we ignore it.
+    try:
+        _ = datastore.release_ips(ips)
+        return error_message(None)  # Success; no error
+    except Exception as e:
+        return error_message("Unhandled error %s\n%s" %
+                             (str(e), sys.exc_info()[2]))
+
+
+def _release_uid(uid):
+    """
+    Release all IP addresses with the given unique ID using the data store.
+    :param uid: The unique ID used to allocate the IPs.
+    :return: JSON-serialized result in the following format
+    {
+        "error": None # or, error message describing the problem
+    }
+    """
+    try:
+        _ = datastore.release_ip_by_handle(uid)
+        return error_message(None)  # Success; no error
+    except Exception as e:
+        return error_message("Unhandled error %s\n%s" %
+                             (str(e), sys.exc_info()[2]))
+
+
 def error_message(msg=None):
     """
     Helper function to convert error messages into the JSON format, print
@@ -293,6 +449,6 @@ def error_message(msg=None):
 if __name__ == '__main__':
     setup_logging(LOGFILE)
     results = calico_mesos()
-    if results == None:
+    if results is None:
         results = error_message(None)
     sys.stdout.write(results)
