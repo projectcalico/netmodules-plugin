@@ -124,7 +124,7 @@ def isolate(args):
             try:
                 ip = IPAddress(ip_addr)
             except AddrFormatError:
-                raise IsolatorException("IP address %s could not be parsed: %s" % ip_addr)
+                raise IsolatorException("IP address could not be parsed: %s" % ip_addr)
 
             if ip.version == 6:
                 raise IsolatorException("IPv6 address must not be placed in IPv4 address field.")
@@ -236,9 +236,9 @@ def cleanup(args):
     container_id = args.get("container_id")
 
     if not container_id:
-        raise IsolatorException("Missing container_id")
+        raise IsolatorException(ERROR_MISSING_CONTAINER_ID)
     if not hostname:
-        raise IsolatorException("Missing hostname")
+        raise IsolatorException(ERROR_MISSING_HOSTNAME)
 
     _cleanup(hostname, container_id)
 
@@ -303,8 +303,6 @@ def allocate(args):
     # Validations
     if not uid:
         raise IsolatorException("Missing uid")
-    if not isinstance(uid, (str, unicode)):
-        raise IsolatorException("uid must be a string, not %s", uid)
     try:
         # Convert to string since libcalico requires uids to be strings
         uid = str(uid)
@@ -312,15 +310,23 @@ def allocate(args):
         raise IsolatorException("Invalid UID: %s" % uid)
 
     if hostname is None:
-        raise IsolatorException("Missing hostname")
+        raise IsolatorException(ERROR_MISSING_HOSTNAME)
     if num_ipv4 is None:
         raise IsolatorException("Missing num_ipv4")
     if num_ipv6 is None:
         raise IsolatorException("Missing num_ipv6")
+
     if not isinstance(num_ipv4, (int, long)):
-        raise IsolatorException("num_ip4 must be a number, not %s" % num_ipv4)
+        try:
+            num_ipv4 = int(num_ipv4)
+        except TypeError:
+            raise IsolatorException("num_ipv4 must be an integer")
+
     if not isinstance(num_ipv6, (int, long)):
-        raise IsolatorException("num_ip4 must be a number, not %s" % num_ipv6)
+        try:
+            num_ipv6 = int(num_ipv6)
+        except TypeError:
+            raise IsolatorException("num_ipv6 must be an integer")
 
     return _allocate(num_ipv4, num_ipv6, hostname, uid)
 
@@ -381,7 +387,7 @@ def release(args):
                     ip = IPAddress(ip_str)
                 except (AddrFormatError, ValueError):
                     raise IsolatorException(
-                        "IP address %s could not be parsed: %s" % ip_str)
+                        "IP address could not be parsed: %s" % ip_str)
                 else:
                     ips_validated.add(ip)
             # All IPs validated, call procedure
@@ -393,7 +399,7 @@ def release(args):
             raise IsolatorException("Supply either uid or ips, not both.")
         else:
             if not isinstance(uid, (str, unicode)):
-                raise IsolatorException("uid must be a string, not %s", uid)
+                raise IsolatorException("uid must be a string")
             # uid validated.
             return _release_uid(uid)
 
