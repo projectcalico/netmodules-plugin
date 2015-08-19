@@ -3,13 +3,13 @@ import os
 import errno
 from pycalico import netns
 from pycalico.ipam import IPAMClient
-from pycalico.datastore import Rules, Rule, Endpoint
+from pycalico.datastore import Rules, Rule
 from pycalico.util import get_host_ips
 from netaddr import IPAddress, AddrFormatError
 import json
 import logging
 import logging.handlers
-
+import traceback
 
 LOGFILE = "/var/log/calico/isolator.log"
 ORCHESTRATOR_ID = "mesos"
@@ -85,15 +85,15 @@ def setup_logging(logfile):
 def isolate(args):
     """
     Toplevel function which validates and sanitizes json args into variables
-    which can be passed to _prepare.
+    which can be passed to _isolate.
 
     "args": {
-        "hostname": "slave-H3A-1", # Required
+        "hostname": "slave-H3A-1",                              # Required
         "container_id": "ba11f1de-fc4d-46fd-9f15-424f4ef05a3a", # Required
-        "ipv4_addrs": ["192.168.23.4"],
-        "ipv6_addrs": ["2001:3ac3:f90b:1111::1"],
-        "netgroups": ["prod", "frontend"], # Required.
-        "labels": {  # Optional.
+        "ipv4_addrs": ["192.168.23.4"],                         # Not Required
+        "ipv6_addrs": ["2001:3ac3:f90b:1111::1"],               # Not Required
+        "netgroups": ["prod", "frontend"],                      # Required.
+        "labels": {                                             # Optional.
             "rack": "3A",
             "pop": "houston"
     }
@@ -222,7 +222,10 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
     ep.profile_ids = profiles
 
     # Call through to complete the network setup matching this endpoint
-    ep.mac = ep.provision_veth(ns_pid, "eth0")
+    try:
+        ep.mac = ep.provision_veth(ns_pid, "eth0")
+    except netns.NamespaceError as e:
+        raise IsolatorException(e.message)
 
     datastore.set_endpoint(ep)
     _log.info("Finished networking for container %s", container_id)
@@ -243,9 +246,12 @@ def cleanup(args):
 def _cleanup(hostname, container_id):
     _log.info("Cleaning executor with Container ID %s.", container_id)
 
-    endpoint = datastore.get_endpoint(hostname=hostname,
-                                      orchestrator_id=ORCHESTRATOR_ID,
-                                      workload_id=container_id)
+    try:
+        endpoint = datastore.get_endpoint(hostname=hostname,
+                                          orchestrator_id=ORCHESTRATOR_ID,
+                                          workload_id=container_id)
+    except KeyError:
+        raise IsolatorException("No endpoint found with container-id: %s" % container_id)
 
     # Unassign any address it has.
     for net in endpoint.ipv4_nets | endpoint.ipv6_nets:
@@ -430,15 +436,17 @@ if __name__ == '__main__':
     try:
         response = calico_mesos()
     except IsolatorException as e:
+        _log.error(e)
         sys.stdout.write(error_message(str(e)))
         sys.exit(1)
     except Exception as e:
-        import traceback
+        _log.error(e)
         sys.stdout.write(error_message("Unhandled error %s\n%s" %
                          (str(e), traceback.format_exc())))
         sys.exit(1)
     else:
         if response == None:
             response = error_message(None)
+        _log.info("Request completed with response: %s" % response)
         sys.stdout.write(response)
         sys.exit(0)
