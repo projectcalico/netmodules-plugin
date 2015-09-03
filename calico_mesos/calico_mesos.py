@@ -23,6 +23,9 @@ import json
 import logging
 import logging.handlers
 import traceback
+import re
+from subprocess import check_output, CalledProcessError
+from netaddr import IPNetwork
 
 LOGFILE = "/var/log/calico/isolator.log"
 ORCHESTRATOR_ID = "mesos"
@@ -176,7 +179,7 @@ def create_profile_with_default_mesos_rules(profile):
     # Deny other connections (default, so not explicitly needed).
     # TODO: confirm that we're not getting more interfaces than we bargained for
     ipv4 = get_host_ips(4, exclude=["docker0"]).pop()
-    host_net = ipv4 + "/32"
+    host_net = str(get_host_ip_net())
     _log.info("adding accept rule for %s" % host_net)
     allow_slave = Rule(action="allow", src_net=host_net)
     allow_self = Rule(action="allow", src_tag=profile)
@@ -185,6 +188,34 @@ def create_profile_with_default_mesos_rules(profile):
                        inbound_rules=[allow_slave, allow_self],
                        outbound_rules=[allow_all])
     datastore.profile_update_rules(prof)
+
+def get_host_ip_net():
+    """
+    Gets the IP Address / subnet of the host.
+
+    Ignores Loopback and docker0 Addresses.
+    """
+    IP_SUBNET_RE = re.compile(r'inet ((?:\d+\.){3}\d+\/\d+)')
+    INTERFACE_SPLIT_RE = re.compile(r'(\d+:.*(?:\n\s+.*)+)')
+    IFACE_RE = re.compile(r'^\d+: (\S+):')
+
+    # Call `ip addr`.
+    try:
+        ip_addr_output = check_output(["ip", "-4", "addr"])
+    except CalledProcessError, OSError:
+        raise IsolatorException("Could not read host IP")
+
+    # Separate interface blocks from ip addr output and iterate.
+    for iface_block in INTERFACE_SPLIT_RE.findall(ip_addr_output):
+        # Exclude certain interfaces.
+        match = IFACE_RE.match(iface_block)
+        if match and match.group(1) not in ["docker0", "lo"]:
+            # Iterate through Addresses on interface.
+            for address in IP_SUBNET_RE.findall(iface_block):
+                ip_net = IPNetwork(address)
+                if not ip_net.ip.is_loopback():
+                    return ip_net.cidr
+    raise IsolatorException("Couldn't determine host's IP Address.")
 
 
 def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
@@ -223,7 +254,7 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
 
     # Create any profiles in etcd that do not already exist
     if profiles == []:
-        profiles = ["mesos"]
+        profiles = ["default"]
     _log.info("Assigning Profiles: %s" % profiles)
     for profile in profiles:
         # Create profile with default rules, if it does not exist

@@ -18,7 +18,6 @@ import json
 from netaddr import IPAddress
 from nose_parameterized import parameterized
 from pycalico.datastore_datatypes import Rule
-from pycalico.util import get_host_ips
 import calico_mesos
 from calico_mesos import IsolatorException
 from calico_mesos import ERROR_MISSING_COMMAND, \
@@ -282,7 +281,8 @@ class TestDefaultProfile(unittest.TestCase):
 
         new_rules = m_profile.rules
 
-        host_net = get_host_ips(version=4, exclude=["docker0"]).pop() + "/32"
+        host_net = calico_mesos.get_host_ip_net()
+        #TODO: Better test for getting host ip
         self.assertIn(Rule(action="allow", src_net=host_net), new_rules.inbound_rules)
         self.assertIn(Rule(action="allow", src_tag="TESTPROF"), new_rules.inbound_rules)
         self.assertIn(Rule(action="allow"), new_rules.outbound_rules)
