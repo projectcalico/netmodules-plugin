@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import unittest
-from mock import patch
+from mock import patch, MagicMock
 from mock import Mock
 import json
 from netaddr import IPAddress
@@ -151,6 +151,75 @@ class TestAllocate(unittest.TestCase):
         result = calico_mesos.allocate(args)
         self.assertTrue(m_allocate.called)
         self.assertEqual(result, m_allocate())
+
+
+class TestReserve(unittest.TestCase):
+    @parameterized.expand([
+        ({"hostname": "metaman",
+          "ipv4_addrs": ["192.168.1.1"],
+          "ipv6_addrs": ["dead::beef"]},
+        "Missing uid"),
+
+        ({"ipv4_addrs": ["192.168.1.1"],
+          "ipv6_addrs": ["dead::beef"],
+          "uid": "abc-def-gh"},
+        ERROR_MISSING_HOSTNAME),
+    ])
+    @patch('calico_mesos._reserve')
+    def test_error_messages_with_invalid_params(self, args, error, m_reserve):
+        with self.assertRaises(IsolatorException) as e:
+            calico_mesos.reserve(args)
+        self.assertFalse(m_reserve.called)
+        self.assertEqual(e.exception.message, error)
+
+    @parameterized.expand([
+    ({"hostname": "metaman",
+      "ipv4_addrs": ["192.168.1.1"],
+      "ipv6_addrs": ["dead::beef"],
+      "uid": "abc-def-gh"},),
+    ])
+    @patch('calico_mesos._reserve')
+    def test_reserve_executes_with_valid_params(self, args, m_reserve):
+        result = calico_mesos.reserve(args)
+        self.assertTrue(m_reserve.called)
+        self.assertEqual(result, m_reserve())
+
+    @patch('calico_mesos.datastore')
+    def test_reserve_is_functional(self, m_datastore):
+        hostname = "metaman"
+        ipv4_addrs = ["192.168.1.1", "192.168.1.2"]
+        ipv6_addrs = ["dead::beef"]
+        uid = "abc-def-gh"
+
+        m_assign_ip = Mock()
+        m_datastore.assign_ip = m_assign_ip
+        result = calico_mesos._reserve(hostname, uid, ipv4_addrs, ipv6_addrs)
+        self.assertIsNone(result)
+        for ip_addr in ipv4_addrs + ipv6_addrs:
+            m_assign_ip.assert_any_call(ip_addr, uid, {}, hostname)
+
+    @patch('calico_mesos.datastore')
+    def test_reserve_rolls_back(self, m_datastore):
+        hostname = "metaman"
+        ipv4_addrs = ["192.168.1.1", "192.168.1.2"]
+        ipv6_addrs = ["dead::beef"]
+        uid = "abc-def-gh"
+
+        def side_effect(address, handle_id, attributes, hostname):
+            if address == "192.168.1.2":
+                # Arbitrarily throw an error when the second address is passed in
+                raise ValueError
+
+        m_assign_ip = MagicMock(side_effect=side_effect)
+        m_datastore.assign_ip = m_assign_ip
+
+        # Test that error for second IP was ack'd
+        with self.assertRaises(IsolatorException) as e:
+            calico_mesos._reserve(hostname, uid, ipv4_addrs, ipv6_addrs)
+        self.assertEqual(e.exception.message, "IP '192.168.1.2' already in use.")
+
+        # Test that first IP was unassigned
+        m_datastore.release_ips.assert_called_once_with(ipv4_addrs + ipv6_addrs)
 
 
 class TestRelease(unittest.TestCase):
