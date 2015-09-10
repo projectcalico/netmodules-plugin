@@ -273,7 +273,7 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
 
     # Call through to complete the network setup matching this endpoint
     try:
-        ep.mac = ep.provision_veth(ns_pid, "eth0")
+        ep.mac = ep.provision_veth(netns.PidNamespace(ns_pid), "eth0")
     except netns.NamespaceError as e:
         raise IsolatorException(e.message)
 
