@@ -82,10 +82,6 @@ class TestIsolate(unittest.TestCase):
     @parameterized.expand([
         ({"container_id": "abcdef12345",
           "hostname": "metaman",
-          "pid": 3789},),
-
-        ({"container_id": "abcdef12345",
-          "hostname": "metaman",
           "ipv4_addrs": ["192.168.1.1"],
           "pid": 3789},),
 
@@ -96,13 +92,9 @@ class TestIsolate(unittest.TestCase):
 
         ({"container_id": "abcdef12345",
           "hostname": "metaman",
-          "ipv4_addrs": [],
-          "pid": 3789},),
-
-        ({"container_id": "abcdef12345",
-          "hostname": "metaman",
-          "ipv6_addrs": [],
-          "pid": 3789},),
+          "ipv4_addrs": ["192.168.1.1"],
+          "ipv6_addrs": ["abcd::"],
+          "pid": 3789},)
     ])
     @patch('calico_mesos._isolate')
     def test_isolate_executes_with_valid_params(self, args, m_isolate):
@@ -346,11 +338,11 @@ class TestDefaultProfile(unittest.TestCase):
         m_profile = Mock()
         m_datastore.get_profile.return_value = m_profile
 
-        calico_mesos.create_profile_with_default_mesos_rules("TESTPROF")
+        calico_mesos._create_profile_with_default_mesos_rules("TESTPROF")
 
         new_rules = m_profile.rules
 
-        host_net = calico_mesos.get_host_ip_net()
+        host_net = calico_mesos._get_host_ip_net()
         #TODO: Better test for getting host ip
         self.assertIn(Rule(action="allow", src_net=host_net), new_rules.inbound_rules)
         self.assertIn(Rule(action="allow", src_tag="TESTPROF"), new_rules.inbound_rules)

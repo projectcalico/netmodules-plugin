@@ -42,6 +42,11 @@ _log = logging.getLogger("CALICOMESOS")
 
 
 def calico_mesos():
+    """
+    Module function which parses JSON from stdin and calls the appropriate
+    plugin function.
+    :return:
+    """
     stdin_raw_data = sys.stdin.read()
     _log.info("Received request: %s" % stdin_raw_data)
 
@@ -66,9 +71,9 @@ def calico_mesos():
     # Call command with args
     _log.debug("Executing %s" % command)
     if command == 'isolate':
-        isolate(args)
+        return isolate(args)
     elif command == 'cleanup':
-        cleanup(args)
+        return cleanup(args)
     elif command == 'allocate':
         return allocate(args)
     elif command == 'reserve':
@@ -79,7 +84,7 @@ def calico_mesos():
         raise IsolatorException(ERROR_UNKNOWN_COMMAND % command)
 
 
-def setup_logging(logfile):
+def _setup_logging(logfile):
     # Ensure directory exists.
     try:
         os.makedirs(os.path.dirname(LOGFILE))
@@ -98,6 +103,74 @@ def setup_logging(logfile):
     _log.addHandler(handler)
 
     netns.setup_logging(logfile)
+
+
+def _validate_ip_addrs(ip_addrs, ip_version=None):
+    if type(ip_addrs) != list:
+        raise IsolatorException("IP addresses must be provided as JSON list, not: %s" % type(ip_addrs))
+    validated_ip_addrs = []
+    for ip_addr in ip_addrs:
+        try:
+            ip = IPAddress(ip_addr)
+        except AddrFormatError:
+            raise IsolatorException("IP address could not be parsed: %s" % ip_addr)
+
+        if ip_version and ip.version != ip_version:
+            raise IsolatorException("IPv%d address must not be placed in IPv%d address field." % \
+                                        (ip.version, ip_version))
+        else:
+            validated_ip_addrs.append(ip)
+    return validated_ip_addrs
+
+
+def _create_profile_with_default_mesos_rules(profile):
+    _log.info("Autocreating profile %s", profile)
+    datastore.create_profile(profile)
+    prof = datastore.get_profile(profile)
+    # Set up the profile rules to allow incoming connections from the host
+    # since the slave process will be running there.
+    # Also allow connections from others in the profile.
+    # Deny other connections (default, so not explicitly needed).
+    # TODO: confirm that we're not getting more interfaces than we bargained for
+    ipv4 = get_host_ips(4, exclude=["docker0"]).pop()
+    host_net = str(_get_host_ip_net())
+    _log.info("adding accept rule for %s" % host_net)
+    allow_slave = Rule(action="allow", src_net=host_net)
+    allow_self = Rule(action="allow", src_tag=profile)
+    allow_all = Rule(action="allow")
+    prof.rules = Rules(id=profile,
+                       inbound_rules=[allow_slave, allow_self],
+                       outbound_rules=[allow_all])
+    datastore.profile_update_rules(prof)
+
+
+def _get_host_ip_net():
+    """
+    Gets the IP Address / subnet of the host.
+
+    Ignores Loopback and docker0 Addresses.
+    """
+    IP_SUBNET_RE = re.compile(r'inet ((?:\d+\.){3}\d+\/\d+)')
+    INTERFACE_SPLIT_RE = re.compile(r'(\d+:.*(?:\n\s+.*)+)')
+    IFACE_RE = re.compile(r'^\d+: (\S+):')
+
+    # Call `ip addr`.
+    try:
+        ip_addr_output = check_output(["ip", "-4", "addr"])
+    except CalledProcessError, OSError:
+        raise IsolatorException("Could not read host IP")
+
+    # Separate interface blocks from ip addr output and iterate.
+    for iface_block in INTERFACE_SPLIT_RE.findall(ip_addr_output):
+        # Exclude certain interfaces.
+        match = IFACE_RE.match(iface_block)
+        if match and match.group(1) not in ["docker0", "lo"]:
+            # Iterate through Addresses on interface.
+            for address in IP_SUBNET_RE.findall(iface_block):
+                ip_net = IPNetwork(address)
+                if not ip_net.ip.is_loopback():
+                    return ip_net.cidr
+    raise IsolatorException("Couldn't determine host's IP Address.")
 
 
 def isolate(args):
@@ -136,88 +209,19 @@ def isolate(args):
     if not ipv4_addrs:
         ipv4_addrs_validated = []
     else:
-        # Confirm provided ipv4_addrs are actually IP addresses
-        ipv4_addrs_validated = []
-        for ip_addr in ipv4_addrs:
-            try:
-                ip = IPAddress(ip_addr)
-            except AddrFormatError:
-                raise IsolatorException("IP address could not be parsed: %s" % ip_addr)
-
-            if ip.version == 6:
-                raise IsolatorException("IPv6 address must not be placed in IPv4 address field.")
-            else:
-                ipv4_addrs_validated.append(ip)
+        ipv4_addrs_validated = _validate_ip_addrs(ipv4_addrs, 4)
 
     # Validate IPv6 Addresses
     if not ipv6_addrs:
         ipv6_addrs_validated = []
     else:
-        # Confirm provided ipv4_addrs are actually IP addresses
-        ipv6_addrs_validated = []
-        for ip_addr in ipv6_addrs:
-            try:
-                ip = IPAddress(ip_addr)
-            except AddrFormatError:
-                raise IsolatorException("IP address could not be parsed: %s" % ip_addr)
+        ipv6_addrs_validated = _validate_ip_addrs(ipv6_addrs, 6)
 
-            if ip.version == 4:
-                raise IsolatorException("IPv4 address must not be placed in IPv6 address field.")
-            else:
-                ipv6_addrs_validated.append(ip)
+    if not ipv4_addrs_validated + ipv6_addrs_validated:
+        raise IsolatorException("Must provide at least one IPv4 or IPv6 address.")
 
-    _log.debug("Request validated. Executing")
     _isolate(hostname, pid, container_id, ipv4_addrs_validated, ipv6_addrs_validated, netgroups, labels)
     _log.debug("Request completed.")
-
-
-def create_profile_with_default_mesos_rules(profile):
-    _log.info("Autocreating profile %s", profile)
-    datastore.create_profile(profile)
-    prof = datastore.get_profile(profile)
-    # Set up the profile rules to allow incoming connections from the host
-    # since the slave process will be running there.
-    # Also allow connections from others in the profile.
-    # Deny other connections (default, so not explicitly needed).
-    # TODO: confirm that we're not getting more interfaces than we bargained for
-    ipv4 = get_host_ips(4, exclude=["docker0"]).pop()
-    host_net = str(get_host_ip_net())
-    _log.info("adding accept rule for %s" % host_net)
-    allow_slave = Rule(action="allow", src_net=host_net)
-    allow_self = Rule(action="allow", src_tag=profile)
-    allow_all = Rule(action="allow")
-    prof.rules = Rules(id=profile,
-                       inbound_rules=[allow_slave, allow_self],
-                       outbound_rules=[allow_all])
-    datastore.profile_update_rules(prof)
-
-def get_host_ip_net():
-    """
-    Gets the IP Address / subnet of the host.
-
-    Ignores Loopback and docker0 Addresses.
-    """
-    IP_SUBNET_RE = re.compile(r'inet ((?:\d+\.){3}\d+\/\d+)')
-    INTERFACE_SPLIT_RE = re.compile(r'(\d+:.*(?:\n\s+.*)+)')
-    IFACE_RE = re.compile(r'^\d+: (\S+):')
-
-    # Call `ip addr`.
-    try:
-        ip_addr_output = check_output(["ip", "-4", "addr"])
-    except CalledProcessError, OSError:
-        raise IsolatorException("Could not read host IP")
-
-    # Separate interface blocks from ip addr output and iterate.
-    for iface_block in INTERFACE_SPLIT_RE.findall(ip_addr_output):
-        # Exclude certain interfaces.
-        match = IFACE_RE.match(iface_block)
-        if match and match.group(1) not in ["docker0", "lo"]:
-            # Iterate through Addresses on interface.
-            for address in IP_SUBNET_RE.findall(iface_block):
-                ip_net = IPNetwork(address)
-                if not ip_net.ip.is_loopback():
-                    return ip_net.cidr
-    raise IsolatorException("Couldn't determine host's IP Address.")
 
 
 def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, labels):
@@ -261,7 +265,7 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
     for profile in profiles:
         # Create profile with default rules, if it does not exist
         if not datastore.profile_exists(profile):
-            create_profile_with_default_mesos_rules(profile)
+            _create_profile_with_default_mesos_rules(profile)
 
     # Set profiles on the endpoint
     _log.info("Adding container %s to profile %s", container_id, profile)
@@ -364,34 +368,17 @@ def reserve(args):
         ipv4_addrs_validated = []
     else:
         # Confirm provided ipv4_addrs are actually IP addresses
-        ipv4_addrs_validated = []
-        for ip_addr in ipv4_addrs:
-            try:
-                ip = IPAddress(ip_addr)
-            except AddrFormatError:
-                raise IsolatorException("IP address could not be parsed: %s" % ip_addr)
-
-            if ip.version == 6:
-                raise IsolatorException("IPv6 address must not be placed in IPv4 address field.")
-            else:
-                ipv4_addrs_validated.append(ip)
+        ipv4_addrs_validated = _validate_ip_addrs(ipv4_addrs, 4)
 
     # Validate IPv6 Addresses
     if not ipv6_addrs:
         ipv6_addrs_validated = []
     else:
         # Confirm provided ipv4_addrs are actually IP addresses
-        ipv6_addrs_validated = []
-        for ip_addr in ipv6_addrs:
-            try:
-                ip = IPAddress(ip_addr)
-            except AddrFormatError:
-                raise IsolatorException("IP address could not be parsed: %s" % ip_addr)
+        ipv6_addrs_validated = _validate_ip_addrs(ipv6_addrs, 6)
 
-            if ip.version == 4:
-                raise IsolatorException("IPv4 address must not be placed in IPv6 address field.")
-            else:
-                ipv6_addrs_validated.append(ip)
+    if not ipv4_addrs_validated + ipv6_addrs_validated:
+        raise IsolatorException("Must provide at least one IPv4 or IPv6 address.")
 
     return _reserve(hostname, uid, ipv4_addrs_validated, ipv6_addrs_validated)
 
@@ -523,18 +510,8 @@ def release(args):
         if ips is None:
             raise IsolatorException("Must supply either uid or ips.")
         else:
-            # Validate the IPs.
-            ips_validated = set()
-            for ip_str in ips:
-                try:
-                    ip = IPAddress(ip_str)
-                except (AddrFormatError, ValueError):
-                    raise IsolatorException(
-                        "IP address could not be parsed: %s" % ip_str)
-                else:
-                    ips_validated.add(ip)
-            # All IPs validated, call procedure
-            return _release_ips(ips_validated)
+            ips_validated = _validate_ip_addrs(ips)
+            return _release_ips(set(ips_validated))
 
     else:
         # uid supplied.
@@ -569,10 +546,9 @@ def _release_uid(uid):
     _ = datastore.release_ip_by_handle(uid)
 
 
-def error_message(msg=None):
+def _error_message(msg=None):
     """
-    Helper function to convert error messages into the JSON format, print
-    to stdout, and then quit.
+    Helper function to convert error messages into the JSON format.
     """
     return json.dumps({"error": msg})
 
@@ -580,22 +556,24 @@ def error_message(msg=None):
 class IsolatorException(Exception):
     pass
 
+
+
 if __name__ == '__main__':
-    setup_logging(LOGFILE)
+    _setup_logging(LOGFILE)
     try:
         response = calico_mesos()
     except IsolatorException as e:
         _log.error(e)
-        sys.stdout.write(error_message(str(e)))
+        sys.stdout.write(_error_message(str(e)))
         sys.exit(1)
     except Exception as e:
         _log.error(e)
-        sys.stdout.write(error_message("Unhandled error %s\n%s" %
+        sys.stdout.write(_error_message("Unhandled error %s\n%s" %
                          (str(e), traceback.format_exc())))
         sys.exit(1)
     else:
         if response == None:
-            response = error_message(None)
+            response = _error_message(None)
         _log.info("Request completed with response: %s" % response)
         sys.stdout.write(response)
         sys.exit(0)
