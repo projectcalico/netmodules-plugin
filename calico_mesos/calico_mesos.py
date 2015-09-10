@@ -71,6 +71,8 @@ def calico_mesos():
         cleanup(args)
     elif command == 'allocate':
         return allocate(args)
+    elif command == 'reserve':
+        return reserve(args)
     elif command == 'release':
         return release(args)
     else:
@@ -319,6 +321,103 @@ def _cleanup(hostname, container_id):
                               orchestrator_id=ORCHESTRATOR_ID,
                               workload_id=container_id)
     _log.info("Cleanup complete for container %s", container_id)
+
+
+def reserve(args):
+    """
+    Toplevel function which validates and sanitizes dictionary of  args
+    which can be passed to _reserve. Calico's reserve does not make use of
+    netgroups or labels, so they are ignored.
+
+    "args": {
+		"hostname": "slave-0-1", # Required
+		# At least one of "ipv4_addrs" and "ipv6_addrs" must be present.
+	 	"ipv4_addrs": ["192.168.23.4"],
+		"ipv6_addrs": ["2001:3ac3:f90b:1111::1", "2001:3ac3:f90b:1111::2"],
+		"uid": "0cd47986-24ad-4c00-b9d3-5db9e5c02028",
+	 	"netgroups": ["prod", "frontend"], # Optional.
+	 	"labels": {  # Optional.
+	 		"rack": "3A",
+	 		"pop": "houston"
+	 	}
+	}
+    """
+    hostname = args.get("hostname")
+    ipv4_addrs = args.get("ipv4_addrs")
+    ipv6_addrs = args.get("ipv6_addrs")
+    uid = args.get("uid")
+
+    # Validations
+    if not uid:
+        raise IsolatorException("Missing uid")
+    try:
+        # Convert to string since libcalico requires uids to be strings
+        uid = str(uid)
+    except ValueError:
+        raise IsolatorException("Invalid UID: %s" % uid)
+
+    if hostname is None:
+        raise IsolatorException(ERROR_MISSING_HOSTNAME)
+
+    # Validate IPv4 Addresses
+    if not ipv4_addrs:
+        ipv4_addrs_validated = []
+    else:
+        # Confirm provided ipv4_addrs are actually IP addresses
+        ipv4_addrs_validated = []
+        for ip_addr in ipv4_addrs:
+            try:
+                ip = IPAddress(ip_addr)
+            except AddrFormatError:
+                raise IsolatorException("IP address could not be parsed: %s" % ip_addr)
+
+            if ip.version == 6:
+                raise IsolatorException("IPv6 address must not be placed in IPv4 address field.")
+            else:
+                ipv4_addrs_validated.append(ip)
+
+    # Validate IPv6 Addresses
+    if not ipv6_addrs:
+        ipv6_addrs_validated = []
+    else:
+        # Confirm provided ipv4_addrs are actually IP addresses
+        ipv6_addrs_validated = []
+        for ip_addr in ipv6_addrs:
+            try:
+                ip = IPAddress(ip_addr)
+            except AddrFormatError:
+                raise IsolatorException("IP address could not be parsed: %s" % ip_addr)
+
+            if ip.version == 4:
+                raise IsolatorException("IPv4 address must not be placed in IPv6 address field.")
+            else:
+                ipv6_addrs_validated.append(ip)
+
+    return _reserve(hostname, uid, ipv4_addrs_validated, ipv6_addrs_validated)
+
+
+def _reserve(hostname, uid, ipv4_addrs, ipv6_addrs):
+    """
+    Reserve an IP from the IPAM. 
+    :param hostname: The host agent which is reserving this IP
+    :param uid: A unique ID, which is indexed by the IPAM module and can be
+    used to release all addresses with the uid.
+    :param ipv4_addrs: List of strings specifiying requested IPv4 addresses
+    :param ipv6_addrs: List of strings specifiying requested IPv6 addresses
+    :return:
+    """
+    _log.info("Reserving. hostname: %s, uid: %s, ipv4_addrs: %s, ipv6_addrs: %s" % \
+              (hostname, uid, ipv4_addrs, ipv6_addrs))
+    try:
+        for ip_addr in ipv4_addrs + ipv6_addrs:
+            datastore.assign_ip(ip_addr, uid, {}, hostname)
+            # Keep track of succesfully assigned ip_addrs in case we need to rollback
+    except (RuntimeError, ValueError):
+        failed_addr = ip_addr
+        _log.error("Couldn't reserve %s. Attempting rollback." % (ip_addr))
+        # Rollback assigned ip_addrs
+        datastore.release_ips(ipv4_addrs + ipv6_addrs)
+        raise IsolatorException("IP '%s' already in use." % failed_addr)
 
 
 def allocate(args):
