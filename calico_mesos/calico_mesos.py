@@ -123,23 +123,36 @@ def _validate_ip_addrs(ip_addrs, ip_version=None):
     return validated_ip_addrs
 
 
-def _create_profile_with_default_mesos_rules(profile):
-    _log.info("Autocreating profile %s", profile)
-    datastore.create_profile(profile)
-    prof = datastore.get_profile(profile)
+def _create_profile_for_host_communication(profile_name):
+    _log.info("Autocreating profile %s", profile_name)
+    datastore.create_profile(profile_name)
+    prof = datastore.get_profile(profile_name)
+    # Set up the profile rules to allow incoming connections from the host
+    # since the slave process will be running there.
+    # Deny other connections (default, so not explicitly needed).
+    host_net = str(_get_host_ip_net())
+    _log.info("adding accept rule for %s" % host_net)
+    allow_slave = Rule(action="allow", src_net=host_net)
+    allow_self = Rule(action="allow", src_tag=profile_name)
+    prof.rules = Rules(id=profile_name,
+                       inbound_rules=[allow_slave, allow_self])
+    datastore.profile_update_rules(prof)
+
+def _create_netgroup_profile(profile_name):
+    _log.info("Autocreating profile %s", profile_name)
+    datastore.create_profile(profile_name)
+    prof = datastore.get_profile(profile_name)
     # Set up the profile rules to allow incoming connections from the host
     # since the slave process will be running there.
     # Also allow connections from others in the profile.
     # Deny other connections (default, so not explicitly needed).
     # TODO: confirm that we're not getting more interfaces than we bargained for
-    ipv4 = get_host_ips(4, exclude=["docker0"]).pop()
     host_net = str(_get_host_ip_net())
     _log.info("adding accept rule for %s" % host_net)
-    allow_slave = Rule(action="allow", src_net=host_net)
-    allow_self = Rule(action="allow", src_tag=profile)
+    allow_self = Rule(action="allow", src_tag=profile_name)
     allow_all = Rule(action="allow")
-    prof.rules = Rules(id=profile,
-                       inbound_rules=[allow_slave, allow_self],
+    prof.rules = Rules(id=profile_name,
+                       inbound_rules=[allow_self],
                        outbound_rules=[allow_all])
     datastore.profile_update_rules(prof)
 
@@ -259,13 +272,15 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
                                    ip_list=ipv4_addrs)
 
     # Create any profiles in etcd that do not already exist
-    if profiles == []:
-        profiles = ["default"]
     _log.info("Assigning Profiles: %s" % profiles)
     for profile in profiles:
-        # Create profile with default rules, if it does not exist
         if not datastore.profile_exists(profile):
-            _create_profile_with_default_mesos_rules(profile)
+            _create_netgroup_profile(profile)
+
+    _log.info("Assigning Default Host Profile: %s" % profiles)
+    default_profile_name = "default_%s" % hostname
+    if not datastore.profile_exists(default_profile_name):
+        _create_netgroup_profile(default_profile_name)
 
     # Set profiles on the endpoint
     _log.info("Adding container %s to profile %s", container_id, profile)
