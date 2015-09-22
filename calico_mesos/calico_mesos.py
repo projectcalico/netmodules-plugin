@@ -18,6 +18,7 @@ from pycalico import netns
 from pycalico.ipam import IPAMClient
 from pycalico.datastore import Rules, Rule
 from pycalico.util import get_host_ips
+from pycalico.block import AlreadyAssignedError
 from netaddr import IPAddress, AddrFormatError
 import json
 import logging
@@ -424,17 +425,18 @@ def _reserve(hostname, uid, ipv4_addrs, ipv6_addrs):
     """
     _log.info("Reserving. hostname: %s, uid: %s, ipv4_addrs: %s, ipv6_addrs: %s" % \
               (hostname, uid, ipv4_addrs, ipv6_addrs))
+    assigned_ips = []
     try:
         for ip_addr in ipv4_addrs + ipv6_addrs:
             datastore.assign_ip(ip_addr, uid, {}, hostname)
+            assigned_ips.append(ip_addr)
             # Keep track of succesfully assigned ip_addrs in case we need to rollback
-    except (RuntimeError, ValueError):
+    except (RuntimeError, ValueError, AlreadyAssignedError):
         failed_addr = ip_addr
         _log.error("Couldn't reserve %s. Attempting rollback." % (ip_addr))
         # Rollback assigned ip_addrs
-        datastore.release_ips(ipv4_addrs + ipv6_addrs)
+        datastore.release_ips(set(assigned_ips))
         raise IsolatorException("IP '%s' already in use." % failed_addr)
-
 
 def allocate(args):
     """
