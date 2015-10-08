@@ -17,7 +17,7 @@ from mock import Mock
 import json
 from netaddr import IPAddress
 from nose_parameterized import parameterized
-from pycalico.datastore_datatypes import Rule
+from pycalico.datastore_datatypes import Rule, Endpoint, Profile
 import calico_mesos
 from calico_mesos import IsolatorException
 from calico_mesos import ERROR_MISSING_COMMAND, \
@@ -176,21 +176,18 @@ class TestReserve(unittest.TestCase):
         self.assertTrue(m_reserve.called)
         self.assertEqual(result, m_reserve())
 
-    @patch('calico_mesos.datastore')
+    @patch('calico_mesos.datastore', autospec=True)
     def test_reserve_is_functional(self, m_datastore):
         hostname = "metaman"
         ipv4_addrs = ["192.168.1.1", "192.168.1.2"]
         ipv6_addrs = ["dead::beef"]
         uid = "abc-def-gh"
-
-        m_assign_ip = Mock()
-        m_datastore.assign_ip = m_assign_ip
         result = calico_mesos._reserve(hostname, uid, ipv4_addrs, ipv6_addrs)
         self.assertIsNone(result)
         for ip_addr in ipv4_addrs + ipv6_addrs:
-            m_assign_ip.assert_any_call(ip_addr, uid, {}, hostname)
+            m_datastore.assign_ip.assert_any_call(ip_addr, uid, {}, hostname)
 
-    @patch('calico_mesos.datastore')
+    @patch('calico_mesos.datastore', autospec=True)
     def test_reserve_rolls_back(self, m_datastore):
         hostname = "metaman"
         ipv4_addrs = ["192.168.1.1", "192.168.1.2"]
@@ -330,23 +327,57 @@ class TestDispatch(unittest.TestCase):
 
 
 class TestDefaultProfile(unittest.TestCase):
-    @patch('calico_mesos.datastore')
-    def test_default_profile(self, m_datastore):
-        m_update_rules = Mock()
-        m_datastore.profile_update_rules = m_update_rules
+    HOST_IP_NET = "172.16.0.0/16"
 
-        m_profile = Mock()
-        m_datastore.get_profile.return_value = m_profile
+    @patch('calico_mesos._get_host_ip_net', return_value=HOST_IP_NET)
+    @patch('calico_mesos.datastore', autospec=True)
+    def test_correct_rules_for_host_profile(self, m_datastore, m_get_host_ip_net):
+        new_profile = Mock(spec=Profile)
+        m_datastore.get_profile.return_value = new_profile
 
-        calico_mesos._create_profile_with_default_mesos_rules("TESTPROF")
+        calico_mesos._create_profile_for_host_communication("default")
+        new_rules = new_profile.rules
+        self.assertIn(Rule(action="allow", src_net=self.HOST_IP_NET), new_rules.inbound_rules)
+        self.assertIn(Rule(action="allow", dst_net=self.HOST_IP_NET), new_rules.outbound_rules)
+        self.assertEqual(len(new_rules.inbound_rules) + len(new_rules.outbound_rules), 2)
 
-        new_rules = m_profile.rules
+    @patch('calico_mesos.datastore', autospec=True)
+    def test_correct_rules_for_netgroup_profile(self, m_datastore):
+        new_profile = Mock(spec=Profile)
+        m_datastore.get_profile.return_value = new_profile
 
-        host_net = calico_mesos._get_host_ip_net()
-        #TODO: Better test for getting host ip
-        self.assertIn(Rule(action="allow", src_net=host_net), new_rules.inbound_rules)
-        self.assertIn(Rule(action="allow", src_tag="TESTPROF"), new_rules.inbound_rules)
+        calico_mesos._create_profile_for_netgroup("prof_a")
+        new_rules = new_profile.rules
+        self.assertIn(Rule(action="allow", src_tag="prof_a"), new_rules.inbound_rules)
         self.assertIn(Rule(action="allow"), new_rules.outbound_rules)
+        self.assertEqual(len(new_rules.inbound_rules) + len(new_rules.outbound_rules), 2)
+
+    @patch('calico_mesos.datastore', autospec=True)
+    def test_correct_rules_for_public_profile(self, m_datastore):
+        new_profile = Mock(spec=Profile)
+        m_datastore.get_profile.return_value = new_profile
+
+        calico_mesos._create_profile_for_public_communication("public")
+        new_rules = new_profile.rules
+
+        self.assertIn(Rule(action="allow"), new_rules.inbound_rules)
+        self.assertIn(Rule(action="allow"), new_rules.outbound_rules)
+        self.assertEqual(len(new_rules.inbound_rules) + len(new_rules.outbound_rules), 2)
+
+
+    @patch('calico_mesos.datastore', autospec=True)
+    def test_profiles_are_created(self, m_datastore):
+        created_endpoint = Mock(spec=Endpoint)
+        m_datastore.create_endpoint.return_value = created_endpoint
+        m_datastore.profile_exists.return_value = False
+
+        profiles = ["public", "prof_a"]
+        calico_mesos._isolate("testhostname", 1234, "container-id-1234", ["192.168.0.0"], [], profiles, None)
+
+        self.assertIn("public", created_endpoint.profile_ids)
+        self.assertIn("ng_prof_a", created_endpoint.profile_ids)
+        self.assertIn("default_testhostname", created_endpoint.profile_ids)
+        self.assertEqual(len(created_endpoint.profile_ids), 3)
 
 
 class TestCleanup(unittest.TestCase):

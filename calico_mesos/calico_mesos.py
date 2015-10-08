@@ -122,40 +122,50 @@ def _validate_ip_addrs(ip_addrs, ip_version=None):
             validated_ip_addrs.append(ip)
     return validated_ip_addrs
 
-
 def _create_profile_for_host_communication(profile_name):
+    """
+    Create a profile which allows traffic to and from the host.
+    """
     _log.info("Autocreating profile %s", profile_name)
     datastore.create_profile(profile_name)
     prof = datastore.get_profile(profile_name)
-    # Set up the profile rules to allow incoming connections from the host
-    # since the slave process will be running there.
-    # Deny other connections (default, so not explicitly needed).
+
     host_net = str(_get_host_ip_net())
     _log.info("adding accept rule for %s" % host_net)
-    allow_slave = Rule(action="allow", src_net=host_net)
-    allow_self = Rule(action="allow", src_tag=profile_name)
+    allow_from_slave = Rule(action="allow", src_net=host_net)
+    allow_to_slave = Rule(action="allow", dst_net=host_net)
     prof.rules = Rules(id=profile_name,
-                       inbound_rules=[allow_slave, allow_self])
+                       inbound_rules=[allow_from_slave],
+                       outbound_rules=[allow_to_slave])
     datastore.profile_update_rules(prof)
 
-def _create_netgroup_profile(profile_name):
+def _create_profile_for_netgroup(profile_name):
+    """
+    Create a profile which allows traffic from other Endpoints in the same
+    profile.
+    """
     _log.info("Autocreating profile %s", profile_name)
     datastore.create_profile(profile_name)
     prof = datastore.get_profile(profile_name)
-    # Set up the profile rules to allow incoming connections from the host
-    # since the slave process will be running there.
-    # Also allow connections from others in the profile.
-    # Deny other connections (default, so not explicitly needed).
-    # TODO: confirm that we're not getting more interfaces than we bargained for
-    host_net = str(_get_host_ip_net())
-    _log.info("adding accept rule for %s" % host_net)
-    allow_self = Rule(action="allow", src_tag=profile_name)
+    allow_from_profile = Rule(action="allow", src_tag=profile_name)
+    allow_to_all = Rule(action="allow")
+    prof.rules = Rules(id=profile_name,
+                       inbound_rules=[allow_from_profile],
+                       outbound_rules=[allow_to_all])
+    datastore.profile_update_rules(prof)
+
+def _create_profile_for_public_communication(profile_name):
+    """
+    Create a public profile which allows open traffic from all.
+    """
+    _log.info("Creating public profile: %s", profile_name)
+    datastore.create_profile(profile_name)
+    prof = datastore.get_profile(profile_name)
     allow_all = Rule(action="allow")
     prof.rules = Rules(id=profile_name,
-                       inbound_rules=[allow_self],
+                       inbound_rules=[allow_all],
                        outbound_rules=[allow_all])
     datastore.profile_update_rules(prof)
-
 
 def _get_host_ip_net():
     """
@@ -205,9 +215,9 @@ def isolate(args):
     hostname = args.get("hostname")
     container_id = args.get("container_id")
     pid = args.get("pid")
-    ipv4_addrs = args.get("ipv4_addrs")
-    ipv6_addrs = args.get("ipv6_addrs")
-    netgroups = args.get("netgroups")
+    ipv4_addrs = args.get("ipv4_addrs", [])
+    ipv6_addrs = args.get("ipv6_addrs", [])
+    netgroups = args.get("netgroups", [])
     labels = args.get("labels")
 
     # Validate Container ID
@@ -219,19 +229,17 @@ def isolate(args):
         raise IsolatorException(ERROR_MISSING_PID)
 
     # Validate IPv4 Addresses
-    if not ipv4_addrs:
-        ipv4_addrs_validated = []
-    else:
-        ipv4_addrs_validated = _validate_ip_addrs(ipv4_addrs, 4)
+    ipv4_addrs_validated = _validate_ip_addrs(ipv4_addrs, 4)
 
     # Validate IPv6 Addresses
-    if not ipv6_addrs:
-        ipv6_addrs_validated = []
-    else:
-        ipv6_addrs_validated = _validate_ip_addrs(ipv6_addrs, 6)
+    ipv6_addrs_validated = _validate_ip_addrs(ipv6_addrs, 6)
 
     if not ipv4_addrs_validated + ipv6_addrs_validated:
         raise IsolatorException("Must provide at least one IPv4 or IPv6 address.")
+
+    # Validate that netgroups are present
+    if type(netgroups) is not list:
+        raise IsolatorException("Must provide list of netgroups.")
 
     _isolate(hostname, pid, container_id, ipv4_addrs_validated, ipv6_addrs_validated, netgroups, labels)
     _log.debug("Request completed.")
@@ -263,7 +271,8 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
     if len(datastore.get_endpoints(hostname=hostname,
                                    orchestrator_id=ORCHESTRATOR_ID,
                                    workload_id=container_id)) == 1:
-        raise IsolatorException("This container has already been configured with Calico Networking.")
+        raise IsolatorException("This container has already been configured "
+                                "with Calico Networking.")
 
     # Create the endpoint
     ep = datastore.create_endpoint(hostname=hostname,
@@ -272,21 +281,36 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
                                    ip_list=ipv4_addrs)
 
     # Create any profiles in etcd that do not already exist
+    assigned_profiles = []
     _log.info("Assigning Profiles: %s" % profiles)
+    # First remove any keyword profile names
+    try:
+        profiles.remove("public")
+    except ValueError:
+        pass
+    else:
+        _log.info("Assigning Public Profile")
+        if not datastore.profile_exists("public"):
+            _create_profile_for_public_communication("public")
+        assigned_profiles.append("public")
+
+    # Assign remaining netgroup profiles
     for profile in profiles:
+        profile = "ng_%s" % profile
         if not datastore.profile_exists(profile):
-            _create_netgroup_profile(profile)
+            _log.info("Assigning Netgroup Profile: %s" % profile)
+            _create_profile_for_netgroup(profile)
+            assigned_profiles.append(profile)
 
-    _log.info("Assigning Default Host Profile: %s" % profiles)
+    # Insert the host-communication profile
     default_profile_name = "default_%s" % hostname
+    _log.info("Assigning Default Host Profile: %s" % default_profile_name)
     if not datastore.profile_exists(default_profile_name):
-        _create_netgroup_profile(default_profile_name)
-
-    # Set profiles on the endpoint
-    _log.info("Adding container %s to profile %s", container_id, profile)
-    ep.profile_ids = profiles
+        _create_profile_for_host_communication(default_profile_name)
+        assigned_profiles.insert(0, default_profile_name)
 
     # Call through to complete the network setup matching this endpoint
+    ep.profile_ids = assigned_profiles
     try:
         ep.mac = ep.provision_veth(netns.PidNamespace(ns_pid), "eth0")
     except netns.NamespaceError as e:
@@ -362,8 +386,8 @@ def reserve(args):
 	}
     """
     hostname = args.get("hostname")
-    ipv4_addrs = args.get("ipv4_addrs")
-    ipv6_addrs = args.get("ipv6_addrs")
+    ipv4_addrs = args.get("ipv4_addrs", [])
+    ipv6_addrs = args.get("ipv6_addrs", [])
     uid = args.get("uid")
 
     # Validations
@@ -378,19 +402,9 @@ def reserve(args):
     if hostname is None:
         raise IsolatorException(ERROR_MISSING_HOSTNAME)
 
-    # Validate IPv4 Addresses
-    if not ipv4_addrs:
-        ipv4_addrs_validated = []
-    else:
-        # Confirm provided ipv4_addrs are actually IP addresses
-        ipv4_addrs_validated = _validate_ip_addrs(ipv4_addrs, 4)
-
-    # Validate IPv6 Addresses
-    if not ipv6_addrs:
-        ipv6_addrs_validated = []
-    else:
-        # Confirm provided ipv4_addrs are actually IP addresses
-        ipv6_addrs_validated = _validate_ip_addrs(ipv6_addrs, 6)
+    # Validate IP addresses
+    ipv4_addrs_validated = _validate_ip_addrs(ipv4_addrs, 4)
+    ipv6_addrs_validated = _validate_ip_addrs(ipv6_addrs, 6)
 
     if not ipv4_addrs_validated + ipv6_addrs_validated:
         raise IsolatorException("Must provide at least one IPv4 or IPv6 address.")
