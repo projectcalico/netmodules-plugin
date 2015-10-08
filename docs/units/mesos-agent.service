@@ -1,0 +1,28 @@
+[Unit]
+Description=Mesos Agent
+After=docker.service calico.service
+Requires=docker.service
+
+[Service]
+TimeoutStartSec=0
+EnvironmentFile=/etc/sysconfig/mesos-agent
+EnvironmentFile=/etc/sysconfig/calico
+ExecStartPre=-/usr/bin/docker kill mesos-agent
+ExecStartPre=-/usr/bin/docker rm mesos-agent
+ExecStart=/usr/bin/docker run --name mesos-agent \
+  -e MESOS_MASTER=zk://${ZK}:2181/mesos/master \
+  -e MESOS_EXECUTOR_REGISTRATION_TIMEOUT=5mins \
+  -e MESOS_CONTAINERIZERS=mesos \
+  -e MESOS_ISOLATOR=cgroups/cpu,cgroups/mem \
+  -e MESOS_LOG_DIR=/var/log \
+  -e MESOS_RESOURCES=ports(*):[31000-31100] \
+  -e MESOS_MODULES=file:///calico/modules.json \
+  -e MESOS_ISOLATION=com_mesosphere_mesos_NetworkIsolator \
+  -e MESOS_HOOKS=com_mesosphere_mesos_NetworkHook \
+  -e ETCD_AUTHORITY=${ETCD_AUTHORITY} \
+  --net host \
+  --privileged \
+  spikecurtis/mesos-calico:0.25.0-rc2 /root/runagent
+
+[Install]
+WantedBy=multi-user.target

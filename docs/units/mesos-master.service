@@ -1,0 +1,19 @@
+[Unit]
+Description=Mesos Master
+After=zookeeper.service docker.service
+Requires=zookeeper.service docker.service
+
+[Service]
+TimeoutStartSec=0
+ExecStartPre=-/usr/bin/docker kill mesos-master
+ExecStartPre=-/usr/bin/docker rm mesos-master
+ExecStart=/usr/bin/docker run --name mesos-master \
+  -e MESOS_WORK_DIR=/var/mesos \
+  -e MESOS_ZK=zk://127.0.0.1:2181/mesos/master \
+  -e MESOS_QUORUM=1 \
+  -e MESOS_LOG_DIR=/var/log \
+  --net host \
+  spikecurtis/mesos-calico:0.25.0-rc2 /usr/local/sbin/mesos-master
+
+[Install]
+WantedBy=multi-user.target
