@@ -1,7 +1,7 @@
 # Calico Networking in Mesos
 **Calico provides an IP-Per-Container Networking for your Mesos Cluster.**
 
-This is accomplishe by giving each Executor instance its own networking namespace seperate from the Slave's to launch applications in. Frameworks can opt-into calico-networking (in lieu of traditional Networking which shares networking namespace with the Slave) by providing [NetworkInfo](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1366) in their [ContainerInfo](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1458) spec. Communication between applications is allowed between applications with the same ["netgroup"](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1389).
+Instead of the Executor sharing its Slave's networking namespace, it is instead given its own to launch applications in.  Frameworks (which are responsible for creating the Executor instances) can opt-in for calico-networking by providing [NetworkInfo](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1366) in their [ContainerInfo](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1458) spec. Frameworks which do not provide NetworkInfo will simply be launched with traditional networking. Communication between applications is allowed between applications with the same ["netgroup"](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1389).
 
 Calico-mesos works in conjunction with [net-modules](https://github.com/mesosphere/net-modules), which provides a simple JSON abstraction layer between Calico and Mesos.
 
