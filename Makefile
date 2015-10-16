@@ -4,7 +4,6 @@ SRCDIR=calico_mesos
 BUILD_DIR=build_calico_mesos
 PYCALICO=$(wildcard $(BUILD_DIR)/libcalico/calico_containers/pycalico/*.py)
 CALICO_MESOS=$(wildcard $(SRCDIR)/calico_mesos.py)
-ST_TO_RUN?=calico_mesos/tests/st/
 
 binary: dist/calico_isolator
 
@@ -26,9 +25,6 @@ dist/calico_isolator: $(CALICO_MESOS) calico_mesos_builder.created
 	-v `pwd`/dist:/code/dist \
 	-e PYTHONPATH=/code/calico_mesos \
 	calico/mesos-builder pyinstaller calico_mesos/calico_mesos.py -a -F -s --clean
-
-st: dist/calico_isolator
-	nosetests $(ST_TO_RUN) --with-timer
 
 run-etcd:
 	@-docker rm -f mesos-etcd
