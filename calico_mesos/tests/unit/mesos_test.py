@@ -18,6 +18,7 @@ import json
 from netaddr import IPAddress
 from nose_parameterized import parameterized
 from pycalico.datastore_datatypes import Rule, Endpoint, Profile
+from pycalico.block import AlreadyAssignedError
 import calico_mesos
 from calico_mesos import IsolatorException
 from calico_mesos import ERROR_MISSING_COMMAND, \
@@ -187,8 +188,13 @@ class TestReserve(unittest.TestCase):
         for ip_addr in ipv4_addrs + ipv6_addrs:
             m_datastore.assign_ip.assert_any_call(ip_addr, uid, {}, hostname)
 
-    @patch('calico_mesos.datastore', autospec=True)
-    def test_reserve_rolls_back(self, m_datastore):
+    @parameterized.expand([
+        [ValueError],
+        [RuntimeError],
+        [AlreadyAssignedError]
+    ])
+    @patch('calico_mesos.datastore')
+    def test_reserve_rolls_back(self, exception, m_datastore):
         hostname = "metaman"
         ipv4_addrs = ["192.168.1.1", "192.168.1.2"]
         ipv6_addrs = ["dead::beef"]
@@ -197,7 +203,7 @@ class TestReserve(unittest.TestCase):
         def side_effect(address, handle_id, attributes, hostname):
             if address == "192.168.1.2":
                 # Arbitrarily throw an error when the second address is passed in
-                raise ValueError
+                raise exception
 
         m_assign_ip = MagicMock(side_effect=side_effect)
         m_datastore.assign_ip = m_assign_ip
@@ -207,8 +213,8 @@ class TestReserve(unittest.TestCase):
             calico_mesos._reserve(hostname, uid, ipv4_addrs, ipv6_addrs)
         self.assertEqual(e.exception.message, "IP '192.168.1.2' already in use.")
 
-        # Test that first IP was unassigned
-        m_datastore.release_ips.assert_called_once_with(ipv4_addrs + ipv6_addrs)
+        # Test that only the first IP was unassigned
+        m_datastore.release_ips.assert_called_once_with(set(["192.168.1.1"]))
 
 
 class TestRelease(unittest.TestCase):
