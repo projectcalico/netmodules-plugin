@@ -17,7 +17,6 @@ import errno
 from pycalico import netns
 from pycalico.ipam import IPAMClient
 from pycalico.datastore import Rules, Rule
-from pycalico.util import get_host_ips
 from pycalico.block import AlreadyAssignedError
 from netaddr import IPAddress, AddrFormatError
 import json
@@ -27,6 +26,7 @@ import traceback
 import re
 from subprocess import check_output, CalledProcessError
 from netaddr import IPNetwork
+import socket
 
 LOGFILE = "/var/log/calico/isolator.log"
 ORCHESTRATOR_ID = "mesos"
@@ -41,6 +41,7 @@ ERROR_MISSING_ARGS = "Missing args"
 datastore = IPAMClient()
 _log = logging.getLogger("CALICOMESOS")
 
+HOSTNAME = socket.gethostname()
 
 def calico_mesos():
     """
@@ -269,14 +270,14 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
 
 
     # Exit if the endpoint has already been configured
-    if len(datastore.get_endpoints(hostname=hostname,
+    if len(datastore.get_endpoints(hostname=HOSTNAME,
                                    orchestrator_id=ORCHESTRATOR_ID,
                                    workload_id=container_id)) == 1:
         raise IsolatorException("This container has already been configured "
                                 "with Calico Networking.")
 
     # Create the endpoint
-    ep = datastore.create_endpoint(hostname=hostname,
+    ep = datastore.create_endpoint(hostname=HOSTNAME,
                                    orchestrator_id=ORCHESTRATOR_ID,
                                    workload_id=container_id,
                                    ip_list=ipv4_addrs)
@@ -301,14 +302,14 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
         if not datastore.profile_exists(profile):
             _log.info("Assigning Netgroup Profile: %s" % profile)
             _create_profile_for_netgroup(profile)
-            assigned_profiles.append(profile)
+        assigned_profiles.append(profile)
 
     # Insert the host-communication profile
     default_profile_name = "default_%s" % hostname
     _log.info("Assigning Default Host Profile: %s" % default_profile_name)
     if not datastore.profile_exists(default_profile_name):
         _create_profile_for_host_communication(default_profile_name)
-        assigned_profiles.insert(0, default_profile_name)
+    assigned_profiles.insert(0, default_profile_name)
 
     # Call through to complete the network setup matching this endpoint
     ep.profile_ids = assigned_profiles
@@ -337,7 +338,7 @@ def _cleanup(hostname, container_id):
     _log.info("Cleaning executor with Container ID %s.", container_id)
 
     try:
-        endpoint = datastore.get_endpoint(hostname=hostname,
+        endpoint = datastore.get_endpoint(hostname=HOSTNAME,
                                           orchestrator_id=ORCHESTRATOR_ID,
                                           workload_id=container_id)
     except KeyError:
@@ -361,7 +362,7 @@ def _cleanup(hostname, container_id):
     datastore.remove_endpoint(endpoint)
 
     # Remove the container from the datastore.
-    datastore.remove_workload(hostname=hostname,
+    datastore.remove_workload(hostname=HOSTNAME,
                               orchestrator_id=ORCHESTRATOR_ID,
                               workload_id=container_id)
     _log.info("Cleanup complete for container %s", container_id)
@@ -424,11 +425,11 @@ def _reserve(hostname, uid, ipv4_addrs, ipv6_addrs):
     :return:
     """
     _log.info("Reserving. hostname: %s, uid: %s, ipv4_addrs: %s, ipv6_addrs: %s" % \
-              (hostname, uid, ipv4_addrs, ipv6_addrs))
+              (HOSTNAME, uid, ipv4_addrs, ipv6_addrs))
     assigned_ips = []
     try:
         for ip_addr in ipv4_addrs + ipv6_addrs:
-            datastore.assign_ip(ip_addr, uid, {}, hostname)
+            datastore.assign_ip(ip_addr, uid, {}, HOSTNAME)
             assigned_ips.append(ip_addr)
             # Keep track of succesfully assigned ip_addrs in case we need to rollback
     except (RuntimeError, ValueError, AlreadyAssignedError):
@@ -509,7 +510,7 @@ def _allocate(num_ipv4, num_ipv6, hostname, uid):
     }
     """
     result = datastore.auto_assign_ips(num_ipv4, num_ipv6, uid, {},
-                                       hostname=hostname)
+                                       hostname=HOSTNAME)
     ipv4_strs = [str(ip) for ip in result[0]]
     ipv6_strs = [str(ip) for ip in result[1]]
     result_json = {"ipv4": ipv4_strs,
