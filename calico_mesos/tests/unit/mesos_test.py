@@ -20,6 +20,7 @@ from nose_parameterized import parameterized
 from pycalico.datastore_datatypes import Rule, Endpoint, Profile
 from pycalico.block import AlreadyAssignedError
 import calico_mesos
+import socket
 from calico_mesos import IsolatorException
 from calico_mesos import ERROR_MISSING_COMMAND, \
     ERROR_MISSING_CONTAINER_ID, \
@@ -28,6 +29,7 @@ from calico_mesos import ERROR_MISSING_COMMAND, \
     ERROR_UNKNOWN_COMMAND, \
     ERROR_MISSING_ARGS
 
+HOSTNAME = socket.gethostname()
 
 class TestIsolate(unittest.TestCase):
     @parameterized.expand([
@@ -186,7 +188,8 @@ class TestReserve(unittest.TestCase):
         result = calico_mesos._reserve(hostname, uid, ipv4_addrs, ipv6_addrs)
         self.assertIsNone(result)
         for ip_addr in ipv4_addrs + ipv6_addrs:
-            m_datastore.assign_ip.assert_any_call(ip_addr, uid, {}, hostname)
+            # TODO: workaround until hostname can be passed in
+            m_datastore.assign_ip.assert_any_call(ip_addr, uid, {}, HOSTNAME)
 
     @parameterized.expand([
         [ValueError],
