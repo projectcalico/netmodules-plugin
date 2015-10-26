@@ -104,8 +104,6 @@ def _setup_logging(logfile):
     handler.setFormatter(formatter)
     _log.addHandler(handler)
 
-    netns.setup_logging(logfile)
-
 
 def _validate_ip_addrs(ip_addrs, ip_version=None):
     if type(ip_addrs) != list:
