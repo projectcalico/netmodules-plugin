@@ -1,4 +1,4 @@
-# Deploying a Mesos Cluster with Calico.
+# Deploying a Dockerized Mesos Cluster with Calico.
 
 In these instructions, we will run all cluster services as [Docker][docker] containers.  This speeds deployment and will prevent pesky issues like incompatible dependencies.  The services we will need are
 
@@ -103,7 +103,7 @@ Next, download the unit files
 
 ## Zookeeper
 
-We'll use systemd to keep Zookeeper running.  Copy the unit into `/etc/systemd/system/`.  This unit file starts a Docker container running Zookeeper.
+We'll use systemd to keep Zookeeper running.  Copy the unit into `/usr/lib/systemd/system/`.  This unit file starts a Docker container running Zookeeper.
 
     $ sudo cp zookeeper.service /usr/lib/systemd/system/
     $ sudo systemctl enable zookeeper.service
