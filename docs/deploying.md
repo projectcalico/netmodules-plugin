@@ -93,9 +93,9 @@ Pull the Docker images.  This will take a few minutes.
 
     $ sudo docker pull jplock/zookeeper:3.4.5
     $ sudo docker pull quay.io/coreos/etcd:v2.2.0
-    $ sudo docker pull spikecurtis/mesos-calico:0.25.0-rc2
+    $ sudo docker pull calico/mesos-calico
     $ sudo docker pull mesosphere/marathon:v0.9.1
-    $ sudo docker pull calico/node:v0.7.0
+    $ sudo docker pull calico/node:v0.8.0
 
 Next, download the unit files
 
@@ -141,8 +141,8 @@ Do this for each compute host you'll use in your Mesos cluster.
 
 Pull the Docker images.  This will take a few minutes.
 
-    $ sudo docker pull spikecurtis/mesos-calico:0.25.0-rc2
-    $ sudo docker pull calico/node:v0.7.0
+    $ sudo docker pull calico/mesos-calico
+    $ sudo docker pull calico/node:v0.8.0
 
 Next, download the unit files
 
@@ -152,7 +152,7 @@ Next, download the unit files
 
 `calicoctl` is a small CLI tool to control your Calico network.  It's used to start Calico services on your compute host, as well as inspect and modify Calico configuration.
 
-    $ curl -L -O https://github.com/projectcalico/calico-docker/releases/download/v0.7.0/calicoctl
+    $ curl -L -O https://github.com/projectcalico/calico-docker/releases/download/v0.8.0/calicoctl
     $ chmod +x calicoctl
     $ sudo cp calicoctl /usr/bin/
 
@@ -197,7 +197,7 @@ Test Calico network functionality by running our test framework.  On the master 
 This will start a new shell inside the `mesos-master` container.
 
     $ cd /framework
-    $ ./calico_framework.py
+    $ python calico_framework.py
 
 The Calico framework launches a series of tasks on your Mesos cluster to verify network connectivity and network isolation are working correctly.
 

@@ -22,7 +22,7 @@ ExecStart=/usr/bin/docker run --name mesos-agent \
   -e ETCD_AUTHORITY=${ETCD_AUTHORITY} \
   --net host \
   --privileged \
-  spikecurtis/mesos-calico:0.25.0-rc2 /root/runagent
+  calico/mesos-calico /root/runagent
 
 [Install]
 WantedBy=multi-user.target

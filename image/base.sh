@@ -26,4 +26,5 @@ $minimal_apt_get_install \
   libsasl2-dev                     \
   libgoogle-glog-dev               \
   libboost-dev                     \
-  libprotobuf-dev
+  libprotobuf-dev                  \
+  wget

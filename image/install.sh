@@ -63,8 +63,8 @@ cp /mesos/build/bin/*.sh /root
 
 # Isolator
 mkdir -p /net-modules
-git clone https://github.com/djosborne/net-modules.git /net-modules
-cd /net-modules && git checkout 0.25-framework
+git clone https://github.com/mesosphere/net-modules.git /net-modules
+cd /net-modules && git checkout integration/0.25
 mv /net-modules/isolator /
 cd /isolator
 
@@ -79,5 +79,7 @@ cd /isolator
 mv /build/runagent /root
 mkdir /calico
 mv /net-modules/calico/modules.json /calico/
-mv /net-modules/calico/calico_isolator /calico/
+cd /calico
+wget https://github.com/projectcalico/calico-mesos/releases/download/v0.1.1/calico_mesos
+chmod +x calico_mesos
 mv /net-modules/framework /

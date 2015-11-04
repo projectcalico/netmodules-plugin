@@ -13,7 +13,7 @@ ExecStart=/usr/bin/docker run --name mesos-master \
   -e MESOS_QUORUM=1 \
   -e MESOS_LOG_DIR=/var/log \
   --net host \
-  spikecurtis/mesos-calico:0.25.0-rc2 /usr/local/sbin/mesos-master
+  calico/mesos-calico /usr/local/sbin/mesos-master
 
 [Install]
 WantedBy=multi-user.target
