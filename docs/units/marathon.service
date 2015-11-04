@@ -1,0 +1,18 @@
+[Unit]
+Description=Mesos Master
+After=mesos-master.service docker.service
+Requires=docker.service
+
+[Service]
+TimeoutStartSec=0
+ExecStartPre=-/usr/bin/docker kill marathon
+ExecStartPre=-/usr/bin/docker rm marathon
+ExecStart=/usr/bin/docker run --name marathon \
+  -e MARATHON_MASTER=zk://localhost:2181/mesos/master \
+  -e MARATHON_ZK=zk://localhost:2181/marathon \
+  -e MARATHON_MAX_TASKS_PER_OFFER=32 \
+  --net host \
+  mesosphere/marathon:v0.9.1
+
+[Install]
+WantedBy=multi-user.target
