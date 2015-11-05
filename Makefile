@@ -1,5 +1,4 @@
 .PHONEY: binary
-
 SRCDIR=calico_mesos
 BUILD_DIR=build_calico_mesos
 PYCALICO=$(wildcard $(BUILD_DIR)/libcalico/calico_containers/pycalico/*.py)
@@ -11,7 +10,6 @@ binary: dist/calico_isolator
 calico_mesos_builder.created: $(BUILD_DIR) $(PYCALICO)
 	cd build_calico_mesos; docker build -t calico/mesos-builder .
 	touch calico_mesos_builder.created
-
 
 # Create the binary: check code changes to source code, ensure builder is created.
 dist/calico_isolator: $(CALICO_MESOS) calico_mesos_builder.created
@@ -43,7 +41,7 @@ ut: calico_mesos_builder.created
 	'/tmp/etcd -data-dir=/tmp/default.etcd/ >/dev/null 2>&1 & \
 	nosetests tests/unit  -c nose.cfg'
 
-ut-circle: calico_mesos_builder.created dist/calico_isolator
+ut-circle: calico_mesos_builder.created dist/calico_isolator rpm
 	docker run \
 	-v `pwd`/calico_mesos:/code \
 	-v $(CIRCLE_TEST_REPORTS):/circle_output \
@@ -54,3 +52,15 @@ ut-circle: calico_mesos_builder.created dist/calico_isolator
 	--with-xunit --xunit-file=/circle_output/output.xml; RC=$$?;\
 	[[ ! -z "$$COVERALLS_REPO_TOKEN" ]] && coveralls || true; exit $$RC'
 
+rpm:
+	mkdir -p dist
+	chmod 777 `pwd`/dist
+	docker build -t calico-mesos-rpm-builder ./packages
+	docker run \
+	 -v `pwd`/dist:/opt/rpms \
+	 calico-mesos-rpm-builder bash -c 'rpmbuild -ba /root/calico-mesos.spec && \
+	 cp /root/rpmbuild/RPMS/x86_64/*.rpm /opt/rpms'
+
+clean-rpm:
+	rm -f dist/*.rpm
+	docker rmi -f calico-mesos-rpm-builder
