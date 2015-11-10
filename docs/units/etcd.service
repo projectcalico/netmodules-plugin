@@ -1,0 +1,22 @@
+[Unit]
+Description=etcd
+After=docker.service
+Requires=docker.service
+
+[Service]
+TimeoutStartSec=0
+EnvironmentFile=-/etc/sysconfig/etcd
+ExecStartPre=-mkdir -p /var/etcd
+ExecStartPre=-chcon -Rt svirt_sandbox_file_t /var/etcd
+ExecStartPre=-/usr/bin/docker kill etcd
+ExecStartPre=-/usr/bin/docker rm etcd
+ExecStart=/usr/bin/docker run --name etcd \
+  --net host \
+  -v /var/etcd:/data \
+  quay.io/coreos/etcd:v2.2.0 \
+  --advertise-client-urls "http://${FQDN}:2379,http://${FQDN}:4001" \
+  --listen-client-urls "http://0.0.0.0:2379,http://0.0.0.0:4001" \
+  --data-dir /data
+
+[Install]
+WantedBy=multi-user.target
