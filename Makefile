@@ -66,7 +66,7 @@ rpm:
 	docker run \
 	 -v `pwd`/dist:/opt/rpms \
 	 calico-mesos-rpm-builder bash -c 'rpmbuild -ba /root/calico-mesos.spec && \
-	 cp /root/rpmbuild/RPMS/x86_64/*.rpm /opt/rpms'
+	 cp /root/rpmbuild/RPMS/*.rpm /opt/rpms'
 
 clean-rpm:
 	rm -f dist/*.rpm
