@@ -1,3 +1,8 @@
+<!--- master only -->
+[![Slack Status](https://calicousers-slackin.herokuapp.com/badge.svg)](https://calicousers-slackin.herokuapp.com)
+[![IRC Channel](https://img.shields.io/badge/irc-%23calico-blue.svg)](https://kiwiirc.com/client/irc.freenode.net/#calico)
+<!--- end of master only -->
+
 # Calico Networking in Mesos
 **Calico provides an IP-Per-Container Networking for your Mesos Cluster.**
 
@@ -10,7 +15,7 @@ Calico-mesos works in conjunction with [net-modules][net-modules], which provide
 For more information on how Calico works, see: [projectcalico.org/learn](http://projectcalico.org/learn) 
 
 ## Architecture
-In order to utilize Calico Networking, each slave in the mesos cluster must install the following dependencies:
+In order to utilize Calico Networking, each slave in the Mesos cluster must install the following dependencies:
 - Each slave must run an instance of [calico-node](https://github.com/projectcalico/calico-docker#how-does-it-work), a packaged container of calico core services
 - Each slave must have `calicoctl`, a command line tool for easily launching the calico-node service.
 - Each slave must have [net-modules][net-modules] libraries installed
@@ -18,12 +23,14 @@ In order to utilize Calico Networking, each slave in the mesos cluster must inst
 - Each slave must have a filled in `modules.json`, which points mesos to the location of `net-modules` libraries, and points `net-modules` to the `calico-mesos` binary.
 - Each slave must start the core mesos-slave process with `--modules=file:///path/to/modules.json`
 
-## Demo
-We highly recommend that your first experiments with Mesos & Project Calico are downloading and running [the demo][net-modules], which uses Docker Compose to start a small Mesos cluster with Calico enabled on your desktop or laptop.
+## Demonstration
+We recommend that your first experiments with Mesos & Project Calico are downloading and running [the net-modules demo][net-modules], which uses Docker Compose to start a small Mesos cluster with Calico enabled on your desktop or laptop.
 
-## Deploying a Mesos Cluster with Calico.
+Additionally, for a quick proof of concept, we've Dockerized the core Mesos and Calico components. Follow the [Dockerized Mesos Guide](https://github.com/projectcalico/calico-docker/tree/master/docs/mesos/DockerizedDeployment.md) to see how it works.
 
-However, when you are ready to deploy on actual data center hardware, use [these instructions](docs/deploying.md).
+## Deploying a Mesos Cluster with Calico
+
+When you are ready to deploy on actual data center hardware, follow [the instructions](https://github.com/projectcalico/calico-docker/tree/master/docs/mesos) in the calico-docker repository.
 
 [calico]: http://projectcalico.org
 [mesos]: https://mesos.apache.org/
