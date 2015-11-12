@@ -13,8 +13,6 @@ Source2:       modules.json
 Source3:       calicoctl
 
 Requires:      docker
-Requires:      mesos >= 0.25.0
-Requires:      net-modules
 
 %description
 Calico provides IP-Per-Container Networking for a Mesos Cluster.
