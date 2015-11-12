@@ -1,7 +1,8 @@
 %global __os_install_post %{nil}
+%define _rpmfilename %%{NAME}.rpm
 
 Name:          calico-mesos
-Version:       0.1.1
+Version:       0.1.2
 Release:       1%{?dist}
 Summary:       Calico networking module for Mesos cluster manager
 License:       APv2
