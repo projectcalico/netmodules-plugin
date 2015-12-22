@@ -427,7 +427,7 @@ def _reserve(hostname, uid, ipv4_addrs, ipv6_addrs):
     assigned_ips = []
     try:
         for ip_addr in ipv4_addrs + ipv6_addrs:
-            datastore.assign_ip(ip_addr, uid, {}, HOSTNAME)
+            datastore.assign_ip(ip_addr, uid, {}, host=HOSTNAME)
             assigned_ips.append(ip_addr)
             # Keep track of succesfully assigned ip_addrs in case we need to rollback
     except (RuntimeError, ValueError, AlreadyAssignedError):
@@ -508,7 +508,7 @@ def _allocate(num_ipv4, num_ipv6, hostname, uid):
     }
     """
     result = datastore.auto_assign_ips(num_ipv4, num_ipv6, uid, {},
-                                       hostname=HOSTNAME)
+                                       host=HOSTNAME)
     ipv4_strs = [str(ip) for ip in result[0]]
     ipv6_strs = [str(ip) for ip in result[1]]
     result_json = {"ipv4": ipv4_strs,

@@ -189,7 +189,8 @@ class TestReserve(unittest.TestCase):
         self.assertIsNone(result)
         for ip_addr in ipv4_addrs + ipv6_addrs:
             # TODO: workaround until hostname can be passed in
-            m_datastore.assign_ip.assert_any_call(ip_addr, uid, {}, HOSTNAME)
+            m_datastore.assign_ip.assert_any_call(ip_addr, uid, {},
+                                                  host=HOSTNAME)
 
     @parameterized.expand([
         [ValueError],
@@ -199,12 +200,12 @@ class TestReserve(unittest.TestCase):
     @patch('calico_mesos.datastore')
     def test_reserve_rolls_back(self, exception, m_datastore):
         hostname = "metaman"
-        ipv4_addrs = ["192.168.1.1", "192.168.1.2"]
-        ipv6_addrs = ["dead::beef"]
+        ipv4_addrs = [IPAddress("192.168.1.1"), IPAddress("192.168.1.2")]
+        ipv6_addrs = [IPAddress("dead::beef")]
         uid = "abc-def-gh"
 
-        def side_effect(address, handle_id, attributes, hostname):
-            if address == "192.168.1.2":
+        def side_effect(address, handle_id, attributes, host=None):
+            if address == IPAddress("192.168.1.2"):
                 # Arbitrarily throw an error when the second address is passed in
                 raise exception
 
@@ -216,8 +217,8 @@ class TestReserve(unittest.TestCase):
             calico_mesos._reserve(hostname, uid, ipv4_addrs, ipv6_addrs)
         self.assertEqual(e.exception.message, "IP '192.168.1.2' already in use.")
 
-        # Test that only the first IP was unassigned
-        m_datastore.release_ips.assert_called_once_with(set(["192.168.1.1"]))
+        # Test that only the first IP was released
+        m_datastore.release_ips.assert_called_once_with({IPAddress("192.168.1.1")})
 
 
 class TestRelease(unittest.TestCase):
