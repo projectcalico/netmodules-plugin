@@ -12,6 +12,7 @@ Source0:       calico_mesos
 Source1:       %{name}.service
 Source2:       modules.json
 Source3:       calicoctl
+Source4:       modules
 
 Requires:      docker
 
@@ -31,13 +32,17 @@ mkdir -p -m 0755 %{buildroot}/calico
 install -m 0755 %{SOURCE0} %{buildroot}/calico
 install -m 0755 %{SOURCE2} %{buildroot}/calico
 
+mkdir -p -m 0755 %{buildroot}%{_sysconfdir}/mesos-slave
+install -m 0755 %{SOURCE4} %{buildroot}%{_sysconfdir}/mesos-slave/
+
 ############################################
 %files
 
 /calico/calico_mesos
 /calico/modules.json
-/%{_unitdir}/%{name}.service
-/%{_bindir}/calicoctl
+%{_unitdir}/%{name}.service
+%{_bindir}/calicoctl
+%{_sysconfdir}/mesos-slave/modules
 
 #############################################
 %post

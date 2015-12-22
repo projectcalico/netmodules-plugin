@@ -5,7 +5,7 @@ Requires=docker.service
 
 [Service]
 User=root
-Environment=/etc/default/mesos-slave
+EnvironmentFile=/etc/default/mesos-slave
 PermissionsStartOnly=true
 ExecStart=/usr/bin/calicoctl node --detach=false
 Restart=always

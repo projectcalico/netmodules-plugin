@@ -14,11 +14,8 @@ RUN wget https://github.com/projectcalico/calico-mesos/releases/download/${CALIC
 # Add calicoctl
 RUN wget https://github.com/projectcalico/calico-docker/releases/download/${CALICO_DOCKER_VERSION}/calicoctl -O /root/rpmbuild/SOURCES/calicoctl
 
-# Add modules.json file
-RUN wget https://raw.githubusercontent.com/mesosphere/net-modules/master/calico/modules.json -O /root/rpmbuild/SOURCES/modules.json
-
-# Add systemd files
-ADD ./sources/calico-mesos.service /root/rpmbuild/SOURCES/calico-mesos.service
+# Add sources
+ADD ./sources/ /root/rpmbuild/SOURCES/
 
 # Build RPM
 ADD ./calico-mesos.spec /root/calico-mesos.spec
