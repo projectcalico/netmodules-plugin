@@ -418,8 +418,10 @@ def _reserve(hostname, uid, ipv4_addrs, ipv6_addrs):
     :param hostname: The host agent which is reserving this IP
     :param uid: A unique ID, which is indexed by the IPAM module and can be
     used to release all addresses with the uid.
-    :param ipv4_addrs: List of strings specifiying requested IPv4 addresses
-    :param ipv6_addrs: List of strings specifiying requested IPv6 addresses
+    :param ipv4_addrs: List of IPAddress objects representing requested IPv4
+    addresses.
+    :param ipv6_addrs: List of IPAddress objects representing requested IPv6
+    addresses.
     :return:
     """
     _log.info("Reserving. hostname: %s, uid: %s, ipv4_addrs: %s, ipv6_addrs: %s" % \
