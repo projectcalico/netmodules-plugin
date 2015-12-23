@@ -58,13 +58,13 @@ ut-circle: calico_mesos_builder.created dist/calico_mesos rpm
 	--with-xunit --xunit-file=/circle_output/output.xml; RC=$$?;\
 	[[ ! -z "$$COVERALLS_REPO_TOKEN" ]] && coveralls || true; exit $$RC'
 
-rpm:
+rpm: dist/calico_mesos
 	mkdir -p dist
 	chmod 777 `pwd`/dist
 	docker build -t calico-mesos-rpm-builder ./packages
 	docker run \
 	 -v `pwd`/dist:/opt/rpms \
-	 calico-mesos-rpm-builder bash -c 'rpmbuild -ba /root/calico-mesos.spec && \
+	 calico-mesos-rpm-builder bash -c 'cp /opt/rpms/calico_mesos /root/rpmbuild/SOURCES/ && rpmbuild -ba /root/calico-mesos.spec && \
 	 cp /root/rpmbuild/RPMS/*.rpm /opt/rpms'
 
 clean-rpm:
