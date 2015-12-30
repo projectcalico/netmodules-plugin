@@ -15,7 +15,7 @@ import unittest
 from mock import patch, MagicMock
 from mock import Mock
 import json
-from netaddr import IPAddress
+from netaddr import IPAddress, IPNetwork
 from nose_parameterized import parameterized
 from pycalico.datastore_datatypes import Rule, Endpoint, Profile
 from pycalico.block import AlreadyAssignedError
@@ -404,9 +404,34 @@ class TestCleanup(unittest.TestCase):
             calico_mesos.cleanup(args)
         self.assertEqual(e.exception.message, error)
 
-
     @patch('calico_mesos._cleanup')
     def test_cleanup(self, m_cleanup):
         args = {"hostname": "metaman", "container_id": "abcdef-12345"}
         calico_mesos.cleanup(args)
         m_cleanup.assert_called_with(args["hostname"], args["container_id"])
+
+
+class TestGetHostIPNet(unittest.TestCase):
+    IP_ADDR1_OUTPUT = """
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+    inet 10.0.2.15/24 brd 10.0.2.255 scope global eth0
+       valid_lft forever preferred_lft forever
+3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP group default qlen 1000
+    inet 192.168.10.6/24 brd 192.168.10.255 scope global eth1
+       valid_lft forever preferred_lft forever
+5: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default
+    inet 172.17.0.1/16 scope global docker0
+       valid_lft forever preferred_lft forever
+"""
+    IP_ADDR1_NET = IPNetwork("10.0.2.15/32")
+
+    @patch('calico_mesos.check_output')
+    def test_get_host_ip_net_mainline(self, m_check_output):
+        m_check_output.return_value = self.IP_ADDR1_OUTPUT
+
+        ip_net = calico_mesos._get_host_ip_net()
+        self.assertEqual(self.IP_ADDR1_NET, ip_net)
+

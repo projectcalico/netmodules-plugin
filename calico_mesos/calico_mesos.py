@@ -31,17 +31,18 @@ import socket
 LOGFILE = "/var/log/calico/isolator.log"
 ORCHESTRATOR_ID = "mesos"
 
-ERROR_MISSING_COMMAND      = "Missing command"
+ERROR_MISSING_COMMAND = "Missing command"
 ERROR_MISSING_CONTAINER_ID = "Missing container_id"
-ERROR_MISSING_HOSTNAME     = "Missing hostname"
-ERROR_MISSING_PID          = "Missing pid"
-ERROR_UNKNOWN_COMMAND      = "Unknown command: %s"
+ERROR_MISSING_HOSTNAME = "Missing hostname"
+ERROR_MISSING_PID = "Missing pid"
+ERROR_UNKNOWN_COMMAND = "Unknown command: %s"
 ERROR_MISSING_ARGS = "Missing args"
 
 datastore = IPAMClient()
 _log = logging.getLogger("CALICOMESOS")
 
 HOSTNAME = socket.gethostname()
+
 
 def calico_mesos():
     """
@@ -107,20 +108,25 @@ def _setup_logging(logfile):
 
 def _validate_ip_addrs(ip_addrs, ip_version=None):
     if type(ip_addrs) != list:
-        raise IsolatorException("IP addresses must be provided as JSON list, not: %s" % type(ip_addrs))
+        raise IsolatorException(
+            "IP addresses must be provided as JSON list, not: %s" %
+            type(ip_addrs))
     validated_ip_addrs = []
     for ip_addr in ip_addrs:
         try:
             ip = IPAddress(ip_addr)
         except AddrFormatError:
-            raise IsolatorException("IP address could not be parsed: %s" % ip_addr)
+            raise IsolatorException("IP address could not be parsed: %s" %
+                                    ip_addr)
 
         if ip_version and ip.version != ip_version:
-            raise IsolatorException("IPv%d address must not be placed in IPv%d address field." % \
-                                        (ip.version, ip_version))
+            raise IsolatorException("IPv%d address must not be placed in IPv%d"
+                                    " address field." %
+                                    (ip.version, ip_version))
         else:
             validated_ip_addrs.append(ip)
     return validated_ip_addrs
+
 
 def _create_profile_for_host_communication(profile_name):
     """
@@ -139,6 +145,7 @@ def _create_profile_for_host_communication(profile_name):
                        outbound_rules=[allow_to_slave])
     datastore.profile_update_rules(prof)
 
+
 def _create_profile_for_netgroup(profile_name):
     """
     Create a profile which allows traffic from other Endpoints in the same
@@ -154,6 +161,7 @@ def _create_profile_for_netgroup(profile_name):
                        outbound_rules=[allow_to_all])
     datastore.profile_update_rules(prof)
 
+
 def _create_profile_for_public_communication(profile_name):
     """
     Create a public profile which allows open traffic from all.
@@ -167,9 +175,10 @@ def _create_profile_for_public_communication(profile_name):
                        outbound_rules=[allow_all])
     datastore.profile_update_rules(prof)
 
+
 def _get_host_ip_net():
     """
-    Gets the IP Address / subnet of the host.
+    Gets the IP Address of the host.
 
     Ignores Loopback and docker0 Addresses.
     """
@@ -192,7 +201,10 @@ def _get_host_ip_net():
             for address in IP_SUBNET_RE.findall(iface_block):
                 ip_net = IPNetwork(address)
                 if not ip_net.ip.is_loopback():
-                    return ip_net.cidr
+                    # Select just the host IP address, not the entire subnet
+                    # it belongs, since we only want this host to communicate
+                    # with the executor.
+                    return IPNetwork(ip_net.ip)
     raise IsolatorException("Couldn't determine host's IP Address.")
 
 
@@ -265,7 +277,6 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
     """
     _log.info("Preparing network for Container with ID %s", container_id)
     _log.info("IP: %s, Profile %s", ipv4_addrs, profiles)
-
 
     # Exit if the endpoint has already been configured
     if len(datastore.get_endpoints(hostname=HOSTNAME,
