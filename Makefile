@@ -12,16 +12,18 @@ calico_mesos_builder.created: $(BUILD_DIR)
 
 # Create the binary: check code changes to source code, ensure builder is created.
 dist/calico_mesos: $(CALICO_MESOS) calico_mesos_builder.created
-	mkdir -p dist
-	chmod 777 `pwd`/dist
+	mkdir -p dist/binary/
+	chmod 777 dist/binary/
 	
 	# Build the mesos plugin
 	docker run \
 	-u user \
 	-v `pwd`/calico_mesos:/code/calico_mesos \
-	-v `pwd`/dist:/code/dist \
+	-v `pwd`/dist/binary:/code/dist \
 	-e PYTHONPATH=/code/calico_mesos \
 	calico/mesos-builder pyinstaller calico_mesos/calico_mesos.py -a -F -s --clean
+
+	chmod 777 dist/binary/calico_mesos
 
 run-etcd:
 	@-docker rm -f mesos-etcd
@@ -59,17 +61,13 @@ ut-circle: calico_mesos_builder.created dist/calico_mesos rpm
 	[[ ! -z "$$COVERALLS_REPO_TOKEN" ]] && coveralls || true; exit $$RC'
 
 rpm: dist/calico_mesos
-	mkdir -p dist
-	chmod 777 `pwd`/dist
-	docker build -t calico-mesos-rpm-builder ./packages
+	mkdir -p dist/rpm/
+	chmod 777 dist/rpm/
+	docker build -t calico/mesos-rpm-builder ./packages
 	docker run \
-	 -v `pwd`/dist:/opt/rpms \
-	 calico-mesos-rpm-builder bash -c 'cp /opt/rpms/calico_mesos /root/rpmbuild/SOURCES/ && rpmbuild -ba /root/calico-mesos.spec && \
-	 cp /root/rpmbuild/RPMS/*.rpm /opt/rpms'
-
-clean-rpm:
-	rm -f dist/*.rpm
-	docker rmi -f calico-mesos-rpm-builder
+	-v `pwd`/dist/binary/:/binary/ \
+	-v `pwd`/dist/rpm/:/root/rpmbuild/RPMS/ \
+	calico/mesos-rpm-builder
 
 clean:
 	-rm -f *.created
@@ -78,4 +76,5 @@ clean:
 	-rm -f mesos-calico.tar
 	-docker rmi calico/mesos-calico
 	-docker rmi calico/mesos-builder
+	-docker rmi calico/mesos-rpm-builder
 	-docker run -v /var/run/docker.sock:/var/run/docker.sock -v /var/lib/docker:/var/lib/docker --rm martin/docker-cleanup-volumes
