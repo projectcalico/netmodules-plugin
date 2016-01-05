@@ -353,18 +353,10 @@ def _cleanup(hostname, container_id):
     except KeyError:
         raise IsolatorException("No endpoint found with container-id: %s" % container_id)
 
-    # Unassign any address it has.
-    for net in endpoint.ipv4_nets | endpoint.ipv6_nets:
-        assert(net.size == 1)
-        ip = net.ip
-        _log.info("Attempting to un-allocate IP %s", ip)
-        pools = datastore.get_ip_pools(ip.version)
-        for pool in pools:
-            if ip in pool:
-                # Ignore failure to unassign address, since we're not
-                # enforcing assignments strictly in datastore.py.
-                _log.info("Un-allocate IP %s from pool %s", ip, pool)
-                datastore.unassign_address(pool, ip)
+    # Release IP addresses.
+    ips = {net.ip for net in endpoint.ipv4_nets | endpoint.ipv6_nets}
+    _log.info("%s | Release IPs %s", container_id, ips)
+    datastore.release_ips(ips)
 
     # Remove the endpoint
     _log.info("Removing veth for endpoint %s", endpoint.endpoint_id)
