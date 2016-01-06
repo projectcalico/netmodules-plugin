@@ -96,8 +96,8 @@ def _setup_logging(logfile):
             raise
 
     _log.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(
-                '%(asctime)s [%(levelname)s] %(name)s %(lineno)d: %(message)s')
+    formatter = logging.Formatter('%(asctime)s %(process)d [%(levelname)s] '
+                                  '%(name)s %(lineno)d: %(message)s')
     handler = logging.handlers.TimedRotatingFileHandler(logfile,
                                                         when='D',
                                                         backupCount=10)
