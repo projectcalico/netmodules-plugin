@@ -13,7 +13,7 @@
 # limitations under the License.
 import unittest
 from mock import patch, MagicMock
-from mock import Mock
+from mock import Mock, ANY
 import json
 from netaddr import IPAddress, IPNetwork
 from nose_parameterized import parameterized
@@ -409,6 +409,31 @@ class TestCleanup(unittest.TestCase):
         args = {"hostname": "metaman", "container_id": "abcdef-12345"}
         calico_mesos.cleanup(args)
         m_cleanup.assert_called_with(args["hostname"], args["container_id"])
+
+    @patch('calico_mesos.datastore', autospec=True)
+    def test__cleanup(self, m_datastore):
+        ep = Endpoint("test_host",
+                      "mesos",
+                      "test_workload",
+                      "test_endpoint",
+                      "active",
+                      "aa:bb:cc:dd:ee:ff")
+        ipv4_addrs = {IPAddress(ip) for ip in ["192.168.1.1", "192.168.5.4"]}
+        ipv6_addrs = {IPAddress("2001:4567::1:1")}
+        ep.ipv4_nets = {IPNetwork(ip) for ip in ipv4_addrs}
+        ep.ipv6_nets = {IPNetwork(ip) for ip in ipv6_addrs}
+
+        m_datastore.get_endpoint.return_value = ep
+
+        calico_mesos._cleanup("test_host", "test_workload")
+
+        m_datastore.release_ips.assert_called_once_with(ipv4_addrs |
+                                                        ipv6_addrs)
+        m_datastore.remove_endpoint.assert_called_once_with(ep)
+        m_datastore.remove_workload.assert_called_once_with(
+            hostname=ANY,
+            orchestrator_id=ANY,
+            workload_id="test_workload")
 
 
 class TestGetHostIPNet(unittest.TestCase):
