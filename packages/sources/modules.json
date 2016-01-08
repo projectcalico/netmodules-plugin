@@ -1,7 +1,7 @@
 {
   "libraries": [
     {
-      "file": "/opt/net-modules/libmesos_network_isolator.so",
+      "file": "/usr/local/lib/mesos/libmesos_network_isolator.so",
       "modules": [
         {
           "name": "com_mesosphere_mesos_NetworkIsolator",

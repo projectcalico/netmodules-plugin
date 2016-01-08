@@ -1,30 +1,32 @@
-.PHONEY: binary
-SRCDIR=calico_mesos
+.PHONY: binary
 BUILD_DIR=build_calico_mesos
-CALICO_MESOS=$(wildcard $(SRCDIR)/calico_mesos.py)
+BUILD_FILES=$(BUILD_DIR)/Dockerfile $(BUILD_DIR)/requirements.txt
+CALICO_MESOS_FILES=calico_mesos/calico_mesos.py
 
-binary: dist/calico_mesos
+default: help
+calico_mesos: dist/binary/calico_mesos  ## Create the calico_mesos plugin binary
+build_image: build_calico_mesos/.calico_mesos_builder.created ## Create the calico/mesos-build image
+docker_image: dockerized-mesos/.dockerized_mesos.created ## Create the calico/mesos-calico image
+docker_image.tar: dist/docker/calico-mesos.tar ## Create the calico/mesos-calico image, and tar it.
 
-# Create the image that builds calico_mesos
-calico_mesos_builder.created: $(BUILD_DIR)
-	cd build_calico_mesos; docker build -t calico/mesos-builder .
-	touch calico_mesos_builder.created
+## Create the image that builds calico_mesos.
+build_calico_mesos/.calico_mesos_builder.created: $(BUILD_DIR)
+	cd build_calico_mesos && docker build -t calico/mesos-builder .
+	touch build_calico_mesos/.calico_mesos_builder.created
 
-# Create the binary: check code changes to source code, ensure builder is created.
-dist/calico_mesos: $(CALICO_MESOS) calico_mesos_builder.created
-	mkdir -p dist/binary/
-	chmod 777 dist/binary/
-	
+## Create the calico_mesos plugin binary
+dist/binary/calico_mesos: $(CALICO_MESOS_FILES) build_image
+	mkdir -p -m 777 dist/binary/
+
 	# Build the mesos plugin
-	docker run \
+	docker run --rm \
 	-u user \
 	-v `pwd`/calico_mesos:/code/calico_mesos \
 	-v `pwd`/dist/binary:/code/dist \
 	-e PYTHONPATH=/code/calico_mesos \
-	calico/mesos-builder pyinstaller calico_mesos/calico_mesos.py -a -F -s --clean
+	calico/mesos-builder
 
-	chmod 777 dist/binary/calico_mesos
-
+## Run etcd in a container
 run-etcd:
 	@-docker rm -f mesos-etcd
 	docker run --detach \
@@ -33,23 +35,26 @@ run-etcd:
 	--advertise-client-urls "http://$(LOCAL_IP_ENV):2379,http://127.0.0.1:4001" \
 	--listen-client-urls "http://0.0.0.0:2379,http://0.0.0.0:4001"
 
-mesos_calico_image.created:
+# TODO: maybe change this so docker runs and handles the caching itself,
+# instead of relying on the .created file.
+dockerized-mesos/.dockerized_mesos.created: calico_mesos
 	docker build -f ./Dockerfile -t calico/mesos-calico .
-	touch mesos_calico_image.created
+	touch dockerized-mesos/.mesos_calico_image.created
 
-mesos-calico.tar: mesos_calico_image.created
-	docker save --output mesos-calico.tar calico/mesos-calico
+jenkins: calico_mesos
+	docker build -f ./Dockerfile.development -t calico/mesos-calico:dev .
 
-ut: calico_mesos_builder.created
+
+## Run the UTs in a container
+ut:
 	# Use the `root` user, since code coverage requires the /code directory to
 	# be writable.  It may not be writable for the `user` account inside the
 	# container.
-	docker run --rm -v `pwd`/calico_mesos:/code -u root \
-	calico/mesos-builder bash -c \
-	'/tmp/etcd -data-dir=/tmp/default.etcd/ >/dev/null 2>&1 & \
-	nosetests tests/unit  -c nose.cfg'
+	docker run --rm -u root \
+	-v `pwd`/calico_mesos:/code \
+	calico/mesos-builder
 
-ut-circle: calico_mesos_builder.created dist/calico_mesos rpm
+ut-circle: calico_mesos rpm
 	docker run \
 	-v `pwd`/calico_mesos:/code \
 	-v $(CIRCLE_TEST_REPORTS):/circle_output \
@@ -60,7 +65,8 @@ ut-circle: calico_mesos_builder.created dist/calico_mesos rpm
 	--with-xunit --xunit-file=/circle_output/output.xml; RC=$$?;\
 	[[ ! -z "$$COVERALLS_REPO_TOKEN" ]] && coveralls || true; exit $$RC'
 
-rpm: dist/calico_mesos
+## Create the calico-mesos RPM
+rpm: calico_mesos
 	mkdir -p dist/rpm/
 	chmod 777 dist/rpm/
 	docker build -t calico/mesos-rpm-builder ./packages
@@ -69,12 +75,27 @@ rpm: dist/calico_mesos
 	-v `pwd`/dist/rpm/:/root/rpmbuild/RPMS/ \
 	calico/mesos-rpm-builder
 
+## Clean everything (including stray volumes)
 clean:
-	-rm -f *.created
+	find . -name '*.created' -exec rm -f {} +
 	find . -name '*.pyc' -exec rm -f {} +
 	-rm -rf dist
 	-rm -f mesos-calico.tar
 	-docker rmi calico/mesos-calico
 	-docker rmi calico/mesos-builder
 	-docker rmi calico/mesos-rpm-builder
-	-docker run -v /var/run/docker.sock:/var/run/docker.sock -v /var/lib/docker:/var/lib/docker --rm martin/docker-cleanup-volumes
+
+help: # Some kind of magic from https://gist.github.com/rcmachado/af3db315e31383502660
+	$(info Available targets)
+	@awk '/^[a-zA-Z\-\_0-9]+:/ {                                   \
+		nb = sub( /^## /, "", helpMsg );                             \
+		if(nb == 0) {                                                \
+			helpMsg = $$0;                                             \
+			nb = sub( /^[^:]*:.* ## /, "", helpMsg );                  \
+		}                                                            \
+		if (nb)                                                      \
+			printf "\033[1;31m%-" width "s\033[0m %s\n", $$1, helpMsg; \
+	}                                                              \
+	{ helpMsg = $$0 }'                                             \
+	width=$$(grep -o '^[a-zA-Z_0-9]\+:' $(MAKEFILE_LIST) | wc -L)  \
+	$(MAKEFILE_LIST)
