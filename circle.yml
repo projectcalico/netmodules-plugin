@@ -13,16 +13,12 @@ checkout:
     - for x in $(git ls-tree --full-tree --name-only -r HEAD); do touch -t $(date -d "$(git log -1 --format=%ci "${x}")" +%y%m%d%H%M.%S) "${x}"; done
 
 dependencies:
-  override:
-    - make calico_mesos_builder.created
-
-dependencies:
   cache_directories:
     - "~/docker"
   override:
     - mkdir -p ~/docker
     - if [[ -e ~/docker/build.tar ]]; then docker load -i ~/docker/build.tar; fi
-    - make calico_mesos_builder.created 
+    - make build_image
     - docker save --output ~/docker/build.tar calico/mesos-builder
 
 test:

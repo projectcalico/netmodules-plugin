@@ -1,5 +1,5 @@
 *.pyc
 dist
-calico_mesos_builder.created
 .coverage
-mesos_calico_image.created
+.vagrant
+*.created

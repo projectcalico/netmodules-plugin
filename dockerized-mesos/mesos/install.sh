@@ -42,7 +42,7 @@ mv protobuf.jar /usr/share/java/
 # Clone Mesos (master branch)
 git clone https://github.com/apache/mesos.git /mesos
 cd /mesos
-git checkout 0.25.0
+git checkout $MESOS_BRANCH
 git log -n 1
 
 # Bootstrap
@@ -61,25 +61,4 @@ easy_install /mesos/build/src/python/dist/mesos.native-*.egg
 # Copy start up scripts
 cp /mesos/build/bin/*.sh /root
 
-# Isolator
-mkdir -p /net-modules
-git clone https://github.com/mesosphere/net-modules.git /net-modules
-cd /net-modules && git checkout integration/0.25
-mv /net-modules/isolator /
-cd /isolator
-
-./bootstrap && \
-  rm -rf build && \
-  mkdir build && \
-  cd build && \
-  export LD_LIBRARY_PATH=LD_LIBRARY_PATH:/usr/local/lib && \
-  ../configure --with-mesos=/usr/local --with-protobuf=/usr && \
-  make all
-
-mv /build/runagent /root
-mkdir /calico
-mv /net-modules/calico/modules.json /calico/
-cd /calico
-wget https://github.com/projectcalico/calico-mesos/releases/download/v0.1.1/calico_mesos
-chmod +x calico_mesos
-mv /net-modules/framework /
+mv /build/mesos/runagent /root

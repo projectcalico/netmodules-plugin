@@ -28,18 +28,26 @@ ENV NETMODULES_BRANCH integration/0.26
 ###############
 ##   Mesos   ##
 ###############
-ADD /dockerized-mesos/mesos /build/mesos/
-RUN /build/mesos/base.sh && \
-    /build/mesos/install.sh && \
-    /build/mesos/cleanup.sh
+ADD /dockerized-mesos/mesos/buildconfig /build/mesos/
+ADD /dockerized-mesos/mesos/base.sh /build/mesos/
+RUN /build/mesos/base.sh
+ADD /dockerized-mesos/mesos/install.sh /build/mesos/
+ADD /dockerized-mesos/mesos/runagent /build/mesos/
+RUN /build/mesos/install.sh
+ADD /dockerized-mesos/mesos/cleanup.sh /build/mesos/
+RUN /build/mesos/cleanup.sh
+
 
 #####################
 ##   Net-modules   ##
 #####################
-ADD /dockerized-mesos/net-modules /build/net-modules/
-RUN /build/net-modules/base.sh && \
-    /build/net-modules/install.sh && \
-    /build/net-modules/cleanup.sh
+ADD /dockerized-mesos/net-modules/buildconfig /build/net-modules/
+ADD /dockerized-mesos/net-modules/base.sh /build/net-modules/
+RUN /build/net-modules/base.sh
+ADD /dockerized-mesos/net-modules/install.sh /build/net-modules/
+RUN /build/net-modules/install.sh
+ADD /dockerized-mesos/net-modules/cleanup.sh /build/net-modules/
+RUN /build/net-modules/cleanup.sh
 
 ############
 ## Calico ##

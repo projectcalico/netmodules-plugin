@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -e
-source /build/buildconfig
+source /build/net-modules/buildconfig
 set -x
 
 # Upgrade all packages.
