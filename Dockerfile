@@ -23,7 +23,7 @@ ENV HOME /root
 # docker builds will need to be done with --no-cache. Failing to do so will cause  docker 
 # to not notice the latest commits pushed to said branch, and instead use a stale version of the branch.
 ENV MESOS_BRANCH 0.26.0
-ENV NETMODULES_BRANCH integration/0.26
+ENV NETMODULES_BRANCH master
 
 ###############
 ##   Mesos   ##
