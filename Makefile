@@ -42,7 +42,7 @@ dockerized-mesos/.dockerized_mesos.created: calico_mesos
 	touch dockerized-mesos/.mesos_calico_image.created
 
 jenkins: calico_mesos
-	docker build -f ./Dockerfile.development -t calico/mesos-calico:dev .
+	docker build -t calico/mesos-calico .
 
 
 ## Run the UTs in a container
