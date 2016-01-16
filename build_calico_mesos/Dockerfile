@@ -30,4 +30,3 @@ RUN pip install -r requirements.txt
 RUN useradd -d /home/user -m -s /bin/bash user
 RUN chown -R user:user /code/
 USER user
-CMD bash -c 'pyinstaller calico_mesos/calico_mesos.py -a -F -s --clean && chmod 775 /code/dist/calico_mesos'
