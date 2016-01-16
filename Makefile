@@ -46,13 +46,14 @@ jenkins: calico_mesos
 
 
 ## Run the UTs in a container
-ut:
+ut: build_calico_mesos/.calico_mesos_builder.created
 	# Use the `root` user, since code coverage requires the /code directory to
 	# be writable.  It may not be writable for the `user` account inside the
 	# container.
-	docker run --rm -u root \
-	-v `pwd`/calico_mesos:/code \
-	calico/mesos-builder
+	docker run --rm -v `pwd`/calico_mesos:/code -u root \
+	calico/mesos-builder bash -c \
+	'/tmp/etcd -data-dir=/tmp/default.etcd/ >/dev/null 2>&1 & \
+	nosetests tests/unit -c nose.cfg'
 
 ut-circle: calico_mesos rpm
 	docker run \
