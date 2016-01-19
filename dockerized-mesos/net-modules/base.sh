@@ -27,4 +27,8 @@ $minimal_apt_get_install \
   libgoogle-glog-dev               \
   libboost-dev                     \
   libprotobuf-dev                  \
-  wget
+  wget                             \
+  libevent-dev                     \
+  libevent-openssl-2.0             \
+  libevent-pthreads-2.0            \
+  openssl
