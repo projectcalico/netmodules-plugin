@@ -22,12 +22,11 @@ ENV HOME /root
 # Caution: If the following two environment variables are set to a branch (i.e. master),
 # docker builds will need to be done with --no-cache. Failing to do so will cause  docker 
 # to not notice the latest commits pushed to said branch, and instead use a stale version of the branch.
-ENV MESOS_BRANCH 0.26.0
-ENV NETMODULES_BRANCH master
 
 ###############
 ##   Mesos   ##
 ###############
+ENV MESOS_BRANCH 0.26.0
 ADD /dockerized-mesos/mesos /build/mesos/
 RUN /build/mesos/base.sh && \
     /build/mesos/install.sh && \
@@ -36,6 +35,7 @@ RUN /build/mesos/base.sh && \
 #####################
 ##   Net-modules   ##
 #####################
+ENV NETMODULES_BRANCH integration/0.26
 ADD /dockerized-mesos/net-modules /build/net-modules/
 RUN /build/net-modules/base.sh && \
     /build/net-modules/install.sh && \
