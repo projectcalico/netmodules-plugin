@@ -19,12 +19,11 @@ dist/binary/calico_mesos: $(CALICO_MESOS_FILES) build_image
 	mkdir -p -m 777 dist/binary/
 
 	# Build the mesos plugin
-	docker run --rm \
-	-u user \
-	-v `pwd`/calico_mesos:/code/calico_mesos \
-	-v `pwd`/dist/binary:/code/dist \
-	-e PYTHONPATH=/code/calico_mesos \
-	calico/mesos-builder
+	-docker run --rm \
+	 -v `pwd`/calico_mesos:/code/calico_mesos \
+	 -v `pwd`/dist/binary:/code/dist \
+	 calico/mesos-builder \
+	 pyinstaller calico_mesos/calico_mesos.py -ayF
 
 ## Run etcd in a container
 run-etcd:
@@ -68,8 +67,7 @@ ut-circle: calico_mesos rpm
 
 ## Create the calico-mesos RPM
 rpm: calico_mesos
-	mkdir -p dist/rpm/
-	chmod 777 dist/rpm/
+	mkdir -p -m 777 dist/rpm/
 	docker build -t calico/mesos-rpm-builder ./packages
 	docker run \
 	-v `pwd`/dist/binary/:/binary/ \
