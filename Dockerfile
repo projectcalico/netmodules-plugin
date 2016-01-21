@@ -26,7 +26,7 @@ ENV HOME /root
 # Docker builds will cache the clone during first build. 
 # Changes made to Mesos upstream will not be included in subsequent builds unless
 # images are built with the `--no-cache` flag.
-ENV MESOS_BRANCH 0.26.0
+ENV MESOS_BRANCH 0.27.0-rc2
 ADD /dockerized-mesos/mesos /build/mesos/
 RUN /build/mesos/base.sh && \
     /build/mesos/install.sh && \
@@ -39,7 +39,7 @@ RUN /build/mesos/base.sh && \
 # This means netmodules source code is kept in a Docker layer, resulting in a larger build image.
 # But this allows docker to automatically invalidate the cache if changes were made upstream to the target branch
 # during the docker ADD instruction.
-ENV NETMODULES_BRANCH master
+ENV NETMODULES_BRANCH integration/0.27.0
 ADD https://github.com/mesosphere/net-modules/archive/${NETMODULES_BRANCH}.tar.gz .
 RUN tar -xvf *.tar.gz && mv net-modules-* /net-modules 
 ADD /dockerized-mesos/net-modules /build/net-modules/
