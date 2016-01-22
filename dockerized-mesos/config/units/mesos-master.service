@@ -5,6 +5,7 @@ Requires=zookeeper.service docker.service
 
 [Service]
 TimeoutStartSec=0
+EnvironmentFile=/etc/sysconfig/mesos-master
 ExecStartPre=-/usr/bin/docker kill mesos-master
 ExecStartPre=-/usr/bin/docker rm mesos-master
 ExecStart=/usr/bin/docker run --name mesos-master \
@@ -12,6 +13,7 @@ ExecStart=/usr/bin/docker run --name mesos-master \
   -e MESOS_ZK=zk://127.0.0.1:2181/mesos/master \
   -e MESOS_QUORUM=1 \
   -e MESOS_LOG_DIR=/var/log \
+  -e MESOS_IP=${IP} \
   --net host \
   calico/mesos-calico /usr/local/sbin/mesos-master
 

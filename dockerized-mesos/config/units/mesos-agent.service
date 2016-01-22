@@ -11,6 +11,7 @@ ExecStartPre=-/usr/bin/docker kill mesos-agent
 ExecStartPre=-/usr/bin/docker rm mesos-agent
 ExecStart=/usr/bin/docker run --name mesos-agent \
   -e MESOS_MASTER=zk://${ZK}:2181/mesos/master \
+  -e MESOS_IP=${IP} \
   -e MESOS_EXECUTOR_REGISTRATION_TIMEOUT=5mins \
   -e MESOS_CONTAINERIZERS=mesos \
   -e MESOS_ISOLATOR=cgroups/cpu,cgroups/mem \

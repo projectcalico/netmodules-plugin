@@ -7,7 +7,7 @@ default: help
 calico_mesos: dist/binary/calico_mesos  ## Create the calico_mesos plugin binary
 build_image: build_calico_mesos/.calico_mesos_builder.created ## Create the calico/mesos-build image
 docker_image: dockerized-mesos/.dockerized_mesos.created ## Create the calico/mesos-calico image
-docker_image.tar: dist/docker/calico-mesos.tar ## Create the calico/mesos-calico image, and tar it.
+docker_image.tar: dist/docker/mesos-calico.tar ## Create the calico/mesos-calico image, and tar it.
 
 ## Create the image that builds calico_mesos.
 build_calico_mesos/.calico_mesos_builder.created: $(BUILD_DIR)
@@ -40,8 +40,16 @@ dockerized-mesos/.dockerized_mesos.created: calico_mesos
 	docker build -f ./Dockerfile -t calico/mesos-calico .
 	touch dockerized-mesos/.mesos_calico_image.created
 
+# Tar up the calico/mesos-calico docker image
+dist/docker/mesos-calico.tar: docker_image
+	mkdir -p dist/docker
+	docker save -o dist/docker/mesos-calico.tar calico/mesos-calico
+
 jenkins: calico_mesos
 	docker build -t calico/mesos-calico .
+
+jenkins-vagrant: calico_mesos docker_image.tar
+	vagrant up
 
 
 ## Run the UTs in a container
