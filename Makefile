@@ -51,7 +51,6 @@ jenkins: calico_mesos
 jenkins-vagrant: calico_mesos docker_image.tar
 	vagrant up
 
-
 ## Run the UTs in a container
 ut: build_calico_mesos/.calico_mesos_builder.created
 	# Use the `root` user, since code coverage requires the /code directory to

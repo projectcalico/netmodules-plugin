@@ -50,10 +50,14 @@ Vagrant.configure("2") do |config|
 
       # Install docker, and load in the custom mesos-calico image
       host.vm.provision :docker
-      # TODO: allow for loading of just-built calico-mesos docker image
-      # host.vm.provision "file", source: "dist/docker/mesos-calico.tar", destination: "mesos-calico.tar"
-      # host.vm.provision :shell, inline: "sudo docker load < mesos-calico.tar"
-      host.vm.provision :docker, images: ["calico/mesos-calico"]
+
+      # If the MESOS_CALICO_TAR environment variable is true, load the local calico-mesos docker image from file
+      if ENV["MESOS_CALICO_TAR"] == "true"
+        host.vm.provision "file", source: "dist/docker/mesos-calico.tar", destination: "mesos-calico.tar"
+        host.vm.provision :shell, inline: "sudo docker load < mesos-calico.tar"
+      else
+        host.vm.provision :docker, images: ["calico/mesos-calico"]
+      end
 
       # Get the unit files
       ["etcd", "zookeeper", "marathon", "mesos-master"].each do |service_name| 
