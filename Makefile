@@ -47,16 +47,10 @@ dist/docker/mesos-calico.tar: docker_image
 
 jenkins: calico_mesos
 	docker build -t calico/mesos-calico .
-
-# TODO: Move this over to be the `jenkins` build after vsphere is fully configured with vagrant
-# Tar up the calico/mesos-calico docker image and run vagrant tests through jenkins
-jenkins-vagrant: calico_mesos
-	export MESOS_CALICO_TAR=true
 	docker build -t calico/mesos-calico .
 	mkdir -p dist/docker
 	docker save -o dist/docker/mesos-calico.tar calico/mesos-calico
-	vagrant up
-	# TODO: Run test from vagrant here...
+	MESOS_CALICO_TAR=true vagrant up --provider=vsphere --no-parallel
 
 ## Run the UTs in a container
 ut: build_calico_mesos/.calico_mesos_builder.created
