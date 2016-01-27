@@ -47,10 +47,10 @@ dist/docker/mesos-calico.tar: docker_image
 
 jenkins: calico_mesos
 	docker build -t calico/mesos-calico .
-
-jenkins-vagrant: calico_mesos docker_image.tar
-	vagrant up
-
+	docker build -t calico/mesos-calico .
+	mkdir -p dist/docker
+	docker save -o dist/docker/mesos-calico.tar calico/mesos-calico
+	MESOS_CALICO_TAR=true vagrant up --provider=vsphere --no-parallel
 
 ## Run the UTs in a container
 ut: build_calico_mesos/.calico_mesos_builder.created

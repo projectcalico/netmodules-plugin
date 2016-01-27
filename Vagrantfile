@@ -5,7 +5,7 @@
 num_instances = 2
 
 # Change basename of the VM
-instance_name_prefix="calico"
+instance_name_prefix="calico-mesos"
 calico_node_ver = "v0.8.0"
 calicoctl_url = "https://github.com/projectcalico/calico-containers/releases/download/#{calico_node_ver}/calicoctl"
 
@@ -27,33 +27,46 @@ Vagrant.configure("2") do |config|
     vbox.cpus = 2
   end
 
+  config.vm.provider :vsphere do |vsphere|
+    # The following section sets login credentials for the vagrant-vsphere
+    # plugin to allow use of this Vagrant script in vSphere.
+    # This is not recommended for demo purposes, only internal testing.
+    config.vm.box_url = 'file://dummy.box'
+    vsphere.host =                  ENV['VSPHERE_HOSTNAME']
+    vsphere.compute_resource_name = ENV['VSPHERE_COMPUTE_RESOURCE_NAME']
+    vsphere.template_name =         ENV['VSPHERE_TEMPLATE_NAME']
+    vsphere.user =                  ENV['VSPHERE_USER']
+    vsphere.password =              ENV['VSPHERE_PASSWORD']
+    vsphere.insecure=true
+    vsphere.customization_spec_name = 'vagrant-vsphere'
+  end
+
+  master_ip = "172.24.197.101"
+
   # Set up each box
   (1..num_instances).each do |i|
     vm_name = "%s-%02d" % [instance_name_prefix, i]
     config.vm.define vm_name do |host|
-      domain = "mesos.test"
-
       # Provision the FQDN
-      host.vm.hostname = "%s.%s" % [vm_name, domain]
+      host.vm.hostname = vm_name
 
       # Assign IP and prepend IP/hostname pair to /etc/hosts for correct FQDN IP resolution
-      ip = "172.18.8.#{i+100}"
+      ip = "172.24.197.#{i+100}"
       host.vm.network :private_network, ip: ip
-      (1..num_instances).each do |j|
-        host_ip = "172.18.8.#{j+100}"
-        host_name = "%s-%02d.mesos.test" % [instance_name_prefix, j]
-        host.vm.provision :shell, inline: "echo '#{host_ip}  #{host_name}' | cat - /etc/hosts > tmp && mv tmp /etc/hosts", privileged: true
-      end
 
       # Selinux => permissive
       host.vm.provision :shell, inline: "setenforce permissive", privileged: true
 
       # Install docker, and load in the custom mesos-calico image
       host.vm.provision :docker
-      # TODO: allow for loading of just-built calico-mesos docker image
-      # host.vm.provision "file", source: "dist/docker/mesos-calico.tar", destination: "mesos-calico.tar"
-      # host.vm.provision :shell, inline: "sudo docker load < mesos-calico.tar"
-      host.vm.provision :docker, images: ["calico/mesos-calico"]
+
+      # If the MESOS_CALICO_TAR environment variable is true, load the local calico-mesos docker image from file
+      if ENV["MESOS_CALICO_TAR"] == "true"
+        host.vm.provision "file", source: "dist/docker/mesos-calico.tar", destination: "mesos-calico.tar"
+        host.vm.provision :shell, inline: "sudo docker load < mesos-calico.tar"
+      else
+        host.vm.provision :docker, images: ["calico/mesos-calico"]
+      end
 
       # Get the unit files
       ["etcd", "zookeeper", "marathon", "mesos-master"].each do |service_name| 
@@ -72,7 +85,13 @@ Vagrant.configure("2") do |config|
         host.vm.provision :shell, inline: "systemctl restart firewalld", privileged: true
 
         host.vm.provision :shell, inline: "systemctl restart docker", privileged: true
-          
+
+        # Etcd
+        host.vm.provision :shell, inline: "echo FQDN=`hostname -f` > /etc/sysconfig/etcd"
+        host.vm.provision :shell, inline: "mv etcd.service /usr/lib/systemd/system/", privileged: true
+        host.vm.provision :shell, inline: "systemctl enable etcd.service", privileged: true
+        host.vm.provision :shell, inline: "systemctl start etcd.service", privileged: true
+
         # Zookeeper
         host.vm.provision :shell, inline: "mv zookeeper.service /usr/lib/systemd/system/", privileged: true
         host.vm.provision :shell, inline: "systemctl enable zookeeper.service", privileged: true
@@ -83,14 +102,6 @@ Vagrant.configure("2") do |config|
         host.vm.provision :shell, inline: "mv mesos-master.service /usr/lib/systemd/system/", privileged: true
         host.vm.provision :shell, inline: "systemctl enable mesos-master.service", privileged: true
         host.vm.provision :shell, inline: "systemctl start mesos-master.service", privileged: true
-
-        # Etcd
-        # Set selinux to permissive for etcd to run
-        # TODO: make permanent by setting 'SELINUX=permissive' in /etc/selinuc/config.        
-        host.vm.provision :shell, inline: "echo FQDN=`hostname -f` > /etc/sysconfig/etcd"
-        host.vm.provision :shell, inline: "mv etcd.service /usr/lib/systemd/system/", privileged: true
-        host.vm.provision :shell, inline: "systemctl enable etcd.service", privileged: true
-        host.vm.provision :shell, inline: "systemctl start etcd.service", privileged: true
 
         # Marathon
         host.vm.provision :shell, inline: "mv marathon.service /usr/lib/systemd/system/", privileged: true
@@ -111,7 +122,7 @@ Vagrant.configure("2") do |config|
         host.vm.provision :shell, inline: "yum install -y wget", privileged: true
         host.vm.provision :shell, inline: "wget -qO /usr/bin/calicoctl #{calicoctl_url}", privileged: true
         host.vm.provision :shell, inline: "chmod +x /usr/bin/calicoctl"
-        host.vm.provision :shell, inline: "sh -c 'echo ETCD_AUTHORITY=172.18.8.101:4001 > /etc/sysconfig/calico'", privileged: true
+        host.vm.provision :shell, inline: "sh -c 'echo ETCD_AUTHORITY=#{master_ip}:4001 > /etc/sysconfig/calico'", privileged: true
 
         # Start calico service with systemd and check status
         host.vm.provision "file", source: "dockerized-mesos/config/units/calico.service", destination: "calico.service"
@@ -121,7 +132,7 @@ Vagrant.configure("2") do |config|
         host.vm.provision :shell, inline: "calicoctl status"
 
         # Configure mesos-agent
-        host.vm.provision :shell, inline: "sh -c 'echo ZK=172.18.8.101 > /etc/sysconfig/mesos-agent'", privileged: true
+        host.vm.provision :shell, inline: "sh -c 'echo ZK=#{master_ip} > /etc/sysconfig/mesos-agent'", privileged: true
         host.vm.provision :shell, inline: "sh -c 'echo IP=#{ip} >> /etc/sysconfig/mesos-agent'", privileged: true
         host.vm.provision "file", source: "dockerized-mesos/config/units/mesos-agent.service", destination: "mesos-agent.service"
         host.vm.provision :shell, inline: "mv mesos-agent.service /usr/lib/systemd/system/", privileged: true
