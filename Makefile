@@ -15,7 +15,7 @@ build_calico_mesos/.calico_mesos_builder.created: $(BUILD_DIR)
 	touch build_calico_mesos/.calico_mesos_builder.created
 
 ## Create the calico_mesos plugin binary
-dist/binary/calico_mesos: $(CALICO_MESOS_FILES) build_image
+dist/binary/calico_mesos: $(CALICO_MESOS_FILES) build_calico_mesos/.calico_mesos_builder.created 
 	mkdir -p -m 777 dist/binary/
 
 	# Build the mesos plugin

@@ -30,9 +30,6 @@ apt-get -qy install \
   --no-install-recommends
 
 # Isolator
-mkdir -p /net-modules
-git clone https://github.com/mesosphere/net-modules.git /net-modules
-cd /net-modules && git checkout $NETMODULES_BRANCH
 mv /net-modules/isolator /
 cd /isolator
 

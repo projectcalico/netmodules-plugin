@@ -19,13 +19,13 @@ CMD ["/sbin/my_init"]
 
 ENV HOME /root
 
-# Caution: If the following two environment variables are set to a branch (i.e. master),
-# docker builds will need to be done with --no-cache. Failing to do so will cause  docker 
-# to not notice the latest commits pushed to said branch, and instead use a stale version of the branch.
-
 ###############
 ##   Mesos   ##
 ###############
+# CAUTION: To minify builds, Mesos clones are done within the install.sh step.
+# Docker builds will cache the clone during first build. 
+# Changes made to Mesos upstream will not be included in subsequent builds unless
+# images are built with the `--no-cache` flag.
 ENV MESOS_BRANCH 0.26.0
 ADD /dockerized-mesos/mesos /build/mesos/
 RUN /build/mesos/base.sh && \
@@ -35,7 +35,13 @@ RUN /build/mesos/base.sh && \
 #####################
 ##   Net-modules   ##
 #####################
+# Note: Netmodules builds do *not* cache their github clone as the mesos clone does (see note above).
+# This means netmodules source code is kept in a Docker layer, resulting in a larger build image.
+# But this allows docker to automatically invalidate the cache if changes were made upstream to the target branch
+# during the docker ADD instruction.
 ENV NETMODULES_BRANCH integration/0.26
+ADD https://github.com/mesosphere/net-modules/archive/${NETMODULES_BRANCH}.tar.gz .
+RUN tar -xvf *.tar.gz && mv net-modules-* /net-modules 
 ADD /dockerized-mesos/net-modules /build/net-modules/
 RUN /build/net-modules/base.sh && \
     /build/net-modules/install.sh && \
