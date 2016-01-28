@@ -39,7 +39,7 @@ RUN /build/mesos/base.sh && \
 # This means netmodules source code is kept in a Docker layer, resulting in a larger build image.
 # But this allows docker to automatically invalidate the cache if changes were made upstream to the target branch
 # during the docker ADD instruction.
-ENV NETMODULES_BRANCH integration/0.26
+ENV NETMODULES_BRANCH master
 ADD https://github.com/mesosphere/net-modules/archive/${NETMODULES_BRANCH}.tar.gz .
 RUN tar -xvf *.tar.gz && mv net-modules-* /net-modules 
 ADD /dockerized-mesos/net-modules /build/net-modules/
