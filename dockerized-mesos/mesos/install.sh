@@ -49,7 +49,9 @@ git log -n 1
 ./bootstrap
 
 # Configure
-mkdir build && cd build && ../configure --disable-java --disable-optimize --without-included-zookeeper --with-glog=/usr/local --with-protobuf=/usr --with-boost=/usr/local --enable-libevent --enable-ssl
+mkdir build
+cd build
+../configure --disable-java --disable-optimize --without-included-zookeeper --with-glog=/usr/local --with-protobuf=/usr --with-boost=/usr/local --enable-libevent --enable-ssl
 
 # Build Mesos
 make -j 2 install
