@@ -27,11 +27,11 @@ Vagrant.configure("2") do |config|
     vbox.cpus = 2
   end
 
-  config.vm.provider :vsphere do |vsphere|
+  config.vm.provider :vsphere do |vsphere, override|
     # The following section sets login credentials for the vagrant-vsphere
     # plugin to allow use of this Vagrant script in vSphere.
     # This is not recommended for demo purposes, only internal testing.
-    config.vm.box_url = 'file://dummy.box'
+    override.vm.box_url = 'file://dummy.box'
     vsphere.host =                  ENV['VSPHERE_HOSTNAME']
     vsphere.compute_resource_name = ENV['VSPHERE_COMPUTE_RESOURCE_NAME']
     vsphere.template_name =         ENV['VSPHERE_TEMPLATE_NAME']
