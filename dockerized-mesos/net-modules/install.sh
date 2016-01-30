@@ -33,13 +33,14 @@ apt-get -qy install \
 mv /net-modules/isolator /
 cd /isolator
 
-./bootstrap && \
-  rm -rf build && \
-  mkdir build && \
-  cd build && \
-  export LD_LIBRARY_PATH=LD_LIBRARY_PATH:/usr/local/lib && \
-  ../configure --with-mesos=/usr/local --with-protobuf=/usr && \
-  make all && make install
+./bootstrap
+rm -rf build
+mkdir build
+cd build
+export LD_LIBRARY_PATH=LD_LIBRARY_PATH:/usr/local/lib
+../configure --with-mesos=/usr/local --with-protobuf=/usr
+make all
+make install
 
 mkdir -p /calico
 mv /net-modules/calico/modules.json /calico/
