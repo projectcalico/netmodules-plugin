@@ -65,7 +65,7 @@ Vagrant.configure("2") do |config|
         host.vm.provision "file", source: "dist/docker/mesos-calico.tar", destination: "mesos-calico.tar"
         host.vm.provision :shell, inline: "sudo docker load < mesos-calico.tar"
       else
-        host.vm.provision :docker, images: ["calico/mesos-calico"]
+        host.vm.provision :docker, images: ["calico/mesos-calico:0.27"]
       end
 
       # Get the unit files

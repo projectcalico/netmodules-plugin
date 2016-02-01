@@ -15,7 +15,7 @@ ExecStart=/usr/bin/docker run --name mesos-master \
   -e MESOS_LOG_DIR=/var/log \
   -e MESOS_IP=${IP} \
   --net host \
-  calico/mesos-calico /usr/local/sbin/mesos-master
+  calico/mesos-calico:0.27 /usr/local/sbin/mesos-master
 
 [Install]
 WantedBy=multi-user.target
