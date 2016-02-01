@@ -26,7 +26,7 @@ ENV HOME /root
 # Docker builds will cache the clone during first build. 
 # Changes made to Mesos upstream will not be included in subsequent builds unless
 # images are built with the `--no-cache` flag.
-ENV MESOS_BRANCH 0.27.0-rc2
+ENV MESOS_BRANCH 0.27.0
 ADD /dockerized-mesos/mesos /build/mesos/
 RUN /build/mesos/base.sh && \
     /build/mesos/install.sh && \
