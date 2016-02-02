@@ -22,8 +22,10 @@ ExecStart=/usr/bin/docker run --name mesos-agent \
   -e MESOS_LOG_DIR=/var/log \
   -e MESOS_RESOURCES=ports(*):[31000-31100] \
   -e MESOS_MODULES=file:///calico/modules.json \
-  -e MESOS_ISOLATION=com_mesosphere_mesos_NetworkIsolator \
+  -e MESOS_ISOLATION=com_mesosphere_mesos_NetworkIsolator,filesystem/linux \
   -e MESOS_HOOKS=com_mesosphere_mesos_NetworkHook \
+  -e MESOS_IMAGE_PROVIDERS=docker \
+  -e MESOS_IMAGE_PROVISIONER_BACKEND=copy \
   -e ETCD_AUTHORITY=${ETCD_AUTHORITY} \
   -v /keys:/keys \
   --net host \
