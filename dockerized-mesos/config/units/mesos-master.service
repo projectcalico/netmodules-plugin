@@ -9,11 +9,16 @@ EnvironmentFile=/etc/sysconfig/mesos-master
 ExecStartPre=-/usr/bin/docker kill mesos-master
 ExecStartPre=-/usr/bin/docker rm mesos-master
 ExecStart=/usr/bin/docker run --name mesos-master \
+  -e SSL_ENABLED=true \
+  -e SSL_SUPPORT_DOWNGRADE=true \
+  -e SSL_KEY_FILE=/keys/key.pem \
+  -e SSL_CERT_FILE=/keys/cert.pem \
   -e MESOS_WORK_DIR=/var/mesos \
   -e MESOS_ZK=zk://127.0.0.1:2181/mesos/master \
   -e MESOS_QUORUM=1 \
   -e MESOS_LOG_DIR=/var/log \
   -e MESOS_IP=${IP} \
+  -v /keys:/keys \
   --net host \
   calico/mesos-calico:0.27 /usr/local/sbin/mesos-master
 
