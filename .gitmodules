@@ -1,3 +1,0 @@
-[submodule "build_calico_mesos/libcalico"]
-	path = build_calico_mesos/libcalico
-	url = git@github.com:projectcalico/libcalico.git
