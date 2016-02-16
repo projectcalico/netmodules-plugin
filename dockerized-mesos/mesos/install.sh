@@ -15,7 +15,7 @@ apt-get -qy install \
   build-essential                         \
   autoconf                                \
   automake                                \
-  cmake=3.2.2-2ubuntu2~ubuntu14.04.1~ppa1 \
+  cmake=3.2.2-2~ubuntu14.04.1~ppa1        \
   ca-certificates                         \
   gdb                                     \
   wget                                    \
