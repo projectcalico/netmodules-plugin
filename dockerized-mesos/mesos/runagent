@@ -83,7 +83,4 @@ do
 done
 popd >/dev/null
 
-# We explicitly call hostname here, since Mesos relies on the less reliable
-# solution of reverse-lookup on the IP.  Also the hostname much match what
-# Calico uses, which is obtained by the python equivalent of `hostname`
-/usr/local/sbin/mesos-slave --hostname=`hostname`
+/usr/local/sbin/mesos-slave
