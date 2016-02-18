@@ -7,13 +7,13 @@
 # Calico Networking in Mesos
 **Calico provides an IP-Per-Container Networking for your Mesos Cluster.**
 
-This repository contains code and examples for running [Apache Mesos][mesos] with [Project Calico][calico].
+- For information on Calico Networking, see [projectcalico.org](http://projectcalico.org)
 
-Instead of the Executor sharing its Slave's networking namespace, it is instead given its own to launch applications in.  Frameworks (which are responsible for creating the Executor instances) can opt-in for calico-networking by providing [NetworkInfo](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1366) in their [ContainerInfo](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1458) spec. Frameworks which do not provide NetworkInfo will simply be launched with traditional networking. Communication between applications is allowed between applications with the same ["netgroup"](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1389).
+Traditional Mesos networking treats ports as resources, and binds each task to its agent's IP. With Calico Networking enabled, each executor is given its own IP in an isolated networking namespace. 
 
-Calico-mesos works in conjunction with [net-modules][net-modules], which provides a simple JSON abstraction layer between Calico and Mesos.
+Frameworks (which are responsible for creating the Executor instances) can opt-in for calico-networking by providing [NetworkInfo](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1366) in their [ContainerInfo](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1458) spec. Frameworks which do not provide NetworkInfo will simply be launched with traditional networking. Communication between applications is allowed between applications with the same ["netgroup"](https://github.com/apache/mesos/blob/0.25.0-rc1/include/mesos/mesos.proto#L1389).
 
-For more information on how Calico works, see: [projectcalico.org/learn](http://projectcalico.org/learn) 
+Calico-mesos works in conjunction with [net-modules][net-modules], which provides a simple JSON abstraction layer between Calico and Mesos. 
 
 ## Architecture
 In order to utilize Calico Networking, each slave in the Mesos cluster must install the following dependencies:
@@ -25,13 +25,8 @@ In order to utilize Calico Networking, each slave in the Mesos cluster must inst
 - Each slave must start the core mesos-slave process with `--modules=file:///path/to/modules.json`
 
 ## Demonstration
-We recommend that your first experiments with Mesos & Project Calico are downloading and running [the net-modules demo][net-modules], which uses Docker Compose to start a small Mesos cluster with Calico enabled on your desktop or laptop.
+For information on adding Calico to your Mesos Cluster, see https://github.com/projectcalico/calico-mesos-deployments
 
-Additionally, for a quick proof of concept, we've Dockerized the core Mesos and Calico components. Follow the [Dockerized Mesos Guide](https://github.com/projectcalico/calico-docker/tree/master/docs/mesos/DockerizedDeployment.md) to see how it works.
-
-## Deploying a Mesos Cluster with Calico
-
-When you are ready to deploy on actual data center hardware, follow [the instructions](https://github.com/projectcalico/calico-docker/tree/master/docs/mesos) in the calico-docker repository.
 
 [calico]: http://projectcalico.org
 [mesos]: https://mesos.apache.org/
