@@ -27,11 +27,11 @@ Vagrant.configure("2") do |config|
     vbox.cpus = 2
   end
 
-  config.vm.provider :vsphere do |vsphere|
+  config.vm.provider :vsphere do |vsphere, override|
     # The following section sets login credentials for the vagrant-vsphere
     # plugin to allow use of this Vagrant script in vSphere.
     # This is not recommended for demo purposes, only internal testing.
-    config.vm.box_url = 'file://dummy.box'
+    override.vm.box_url = 'file://dummy.box'
     vsphere.host =                  ENV['VSPHERE_HOSTNAME']
     vsphere.compute_resource_name = ENV['VSPHERE_COMPUTE_RESOURCE_NAME']
     vsphere.template_name =         ENV['VSPHERE_TEMPLATE_NAME']
@@ -57,6 +57,11 @@ Vagrant.configure("2") do |config|
       # Selinux => permissive
       host.vm.provision :shell, inline: "setenforce permissive", privileged: true
 
+      # Generate certs
+      host.vm.provision :shell, inline: "mkdir /keys", privileged: true
+      host.vm.provision :shell, inline: "openssl genrsa -f4  -out /keys/key.pem 4096", privileged: true
+      host.vm.provision :shell, inline: "openssl req -new -batch -x509  -days 365 -key /keys/key.pem -out /keys/cert.pem", privileged: true
+
       # Install docker, and load in the custom mesos-calico image
       host.vm.provision :docker
 
@@ -65,7 +70,7 @@ Vagrant.configure("2") do |config|
         host.vm.provision "file", source: "dist/docker/mesos-calico.tar", destination: "mesos-calico.tar"
         host.vm.provision :shell, inline: "sudo docker load < mesos-calico.tar"
       else
-        host.vm.provision :docker, images: ["calico/mesos-calico"]
+        host.vm.provision :docker, images: ["calico/mesos-calico:0.27"]
       end
 
       # Get the unit files
