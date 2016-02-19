@@ -143,10 +143,29 @@ class TestAllocate(unittest.TestCase):
     ])
     @patch('calico_mesos._allocate')
     def test_allocate_executes_with_valid_params(self, args, m_allocate):
+        m_allocate.return_value = {"ipv4": ["192.168.1.1"],
+                           "ipv6": "dead:beef::",
+                           "error": None}
         result = calico_mesos.allocate(args)
         self.assertTrue(m_allocate.called)
-        self.assertEqual(result, m_allocate())
+        self.assertEqual(result, '{"error": null, "ipv4": ["192.168.1.1"], "ipv6": "dead:beef::"}') 
 
+    @parameterized.expand([
+    ({"hostname": "metaman",
+      "num_ipv4": 1,
+      "num_ipv6": 1,
+      "uid": "abc-def-gh",
+      "labels": {"ipv4_addrs": "['192.168.3.1']"}},),
+    ])
+    @patch('calico_mesos._reserve')
+    @patch('calico_mesos._allocate')
+    def test_allocate_executes_with_static_addr(self, args, m_allocate, m_reserve):
+        m_allocate.return_value = {"ipv4": [],
+                           "ipv6": "dead:beef::",
+                           "error": None}
+        result = calico_mesos.allocate(args)
+        self.assertEqual(result, '{"error": null, "ipv4": ["192.168.3.1"], "ipv6": "dead:beef::"}')
+    
 
 class TestReserve(unittest.TestCase):
     @parameterized.expand([
