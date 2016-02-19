@@ -4,43 +4,35 @@ BUILD_FILES=$(BUILD_DIR)/Dockerfile $(BUILD_DIR)/requirements.txt
 CALICO_MESOS_FILES=calico_mesos/calico_mesos.py
 
 default: help
-calico_mesos: dist/binary/calico_mesos  ## Create the calico_mesos plugin binary
-build_image: build_calico_mesos/.calico_mesos_builder.created ## Create the calico/mesos-build image
-
-## Create the image that builds calico_mesos.
-build_calico_mesos/.calico_mesos_builder.created: $(BUILD_DIR)
-	cd build_calico_mesos && docker build -t calico/mesos-builder .
-	touch build_calico_mesos/.calico_mesos_builder.created
+calico_mesos: dist/calico_mesos  ## Create the calico_mesos plugin binary
 
 ## Create the calico_mesos plugin binary
-dist/binary/calico_mesos: $(CALICO_MESOS_FILES) build_calico_mesos/.calico_mesos_builder.created 
-	mkdir -p -m 777 dist/binary/
+dist/calico_mesos: $(CALICO_MESOS_FILES)
+	mkdir -p -m 777 dist/
 
 	# Build the mesos plugin
-	-docker run --rm \
-	 -v `pwd`/calico_mesos:/code/calico_mesos \
-	 -v `pwd`/dist/binary:/code/dist \
-	 calico/mesos-builder \
+	docker run --rm \
+         -v `pwd`/calico_mesos/:/code/calico_mesos \
+         -v `pwd`/dist/:/code/dist \
+	 calico/build \
 	 pyinstaller calico_mesos/calico_mesos.py -ayF
 
 ## Run the UTs in a container
-ut: build_calico_mesos/.calico_mesos_builder.created
+ut:
 	# Use the `root` user, since code coverage requires the /code directory to
 	# be writable.  It may not be writable for the `user` account inside the
 	# container.
 	docker run --rm -v `pwd`/calico_mesos:/code -u root \
-	calico/mesos-builder bash -c \
-	'/tmp/etcd -data-dir=/tmp/default.etcd/ >/dev/null 2>&1 & \
-	nosetests tests/unit -c nose.cfg'
+	calico/test \
+	nosetests tests/unit -c nose.cfg
 
 ut-circle: calico_mesos
 	docker run \
 	-v `pwd`/calico_mesos:/code \
 	-v $(CIRCLE_TEST_REPORTS):/circle_output \
 	-e COVERALLS_REPO_TOKEN=$(COVERALLS_REPO_TOKEN) \
-        calico/mesos-builder bash -c \
-        '/tmp/etcd -data-dir=/tmp/default.etcd/ >/dev/null 2>&1 & \
-	cd calico_containers; nosetests tests/unit  -c nose.cfg \
+        calico/test sh -c \
+	'nosetests tests/unit  -c nose.cfg \
 	--with-xunit --xunit-file=/circle_output/output.xml; RC=$$?;\
 	[[ ! -z "$$COVERALLS_REPO_TOKEN" ]] && coveralls || true; exit $$RC'
 
@@ -49,7 +41,6 @@ clean:
 	find . -name '*.created' -exec rm -f {} +
 	find . -name '*.pyc' -exec rm -f {} +
 	-rm -rf dist
-	-docker rmi calico/mesos-builder
 
 help: # Some kind of magic from https://gist.github.com/rcmachado/af3db315e31383502660
 	$(info Available targets)
