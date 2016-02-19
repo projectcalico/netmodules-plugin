@@ -5,22 +5,6 @@ machine:
   services:
     - docker
 
-checkout:
-  post:
-    - git submodule sync
-    - git submodule update --init
-    - find . -exec touch -t 201401010000 {} \;
-    - for x in $(git ls-tree --full-tree --name-only -r HEAD); do touch -t $(date -d "$(git log -1 --format=%ci "${x}")" +%y%m%d%H%M.%S) "${x}"; done
-
-dependencies:
-  cache_directories:
-    - "~/docker"
-  override:
-    - mkdir -p ~/docker
-    - if [[ -e ~/docker/build.tar ]]; then docker load -i ~/docker/build.tar; fi
-    - make build_image
-    - docker save --output ~/docker/build.tar calico/mesos-builder
-
 test:
   override:
     - make ut-circle
