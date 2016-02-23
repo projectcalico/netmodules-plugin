@@ -18,6 +18,7 @@ from pycalico import netns
 from pycalico.ipam import IPAMClient
 from pycalico.datastore import Rules, Rule
 from pycalico.block import AlreadyAssignedError
+from pycalico.datastore_errors import DataStoreError
 from netaddr import IPAddress, AddrFormatError
 import json
 import logging
@@ -600,6 +601,22 @@ if __name__ == '__main__':
     except IsolatorException as e:
         _log.error(e)
         sys.stdout.write(_error_message(str(e)))
+        sys.exit(1)
+    except DatastoreError as e:
+        # Encountered an etcd error
+        _log.error(e)
+        # Try to give a more helpful error message depending on whether or not
+        # the user has set ETCD_AUTHORITY
+        try:
+            etcd_authority = os.environ['ETCD_AUTHORITY']
+            error_message = "Failed to communicate with etcd at '%s'. " \
+                    "Ensure that it is up and running or change ETCD_AUTHORITY" \
+                    " environment variable used by the meoss-agent process." % \
+                    etcd_authority
+        except KeyError:
+            error_message = "Failed to communicate with etcd. ETCD_AUTHORITY " \
+                    "is not set for this agent process."
+        sys.stdout.write(_error_message(error_message))
         sys.exit(1)
     except Exception as e:
         _log.error(e)
