@@ -48,7 +48,15 @@ HOSTNAME = socket.gethostname()
 def calico_mesos():
     """
     Module function which parses JSON from stdin and calls the appropriate
-    plugin function.
+    plugin function. Input JSON data looks like the following:
+    {
+        "command": "allocate|isolate|reserve|cleanup",
+        "args": {}
+    }
+    
+    Args will vary depending on which function is called. See the docstring
+    of each of the listed command functions for accepted args.
+
     :return:
     """
     stdin_raw_data = sys.stdin.read()
@@ -71,6 +79,32 @@ def calico_mesos():
         args = stdin_json['args']
     except KeyError:
         raise IsolatorException(ERROR_MISSING_ARGS)
+
+    # Labels are passed in as JSONified protobufs, which look like the following:
+    # {
+    #   "args": {
+    #     ...
+    #     "labels": [
+    #       { "key": "mykey1", "value": "myvalue1" },
+    #       { "key": "mykey2", "value": "myvalue2" }
+    #     ]
+    #   }
+    # }
+    # 
+    # Update them to a more pythonic representation:
+    # {
+    #     "args": {
+    #         ...
+    #         "labels": {
+    #             "mykey1": "myvalue1",
+    #             "mykey2": "myvalue2"
+    #         }
+    #     }
+    # }
+    labels = args.get("labels")
+    if labels:
+        args['labels'] = {label['key']: label['value'] for label in labels}
+        _log.info("Fixed request to be: %s" % str(args))
 
     # Call command with args
     _log.debug("Executing %s" % command)
@@ -108,7 +142,7 @@ def _setup_logging(logfile):
 
 
 def _validate_ip_addrs(ip_addrs, ip_version=None):
-    if type(ip_addrs) != list:
+    if not isinstance(ip_addrs, list):
         raise IsolatorException(
             "IP addresses must be provided as JSON list, not: %s" %
             type(ip_addrs))
@@ -251,7 +285,7 @@ def isolate(args):
         raise IsolatorException("Must provide at least one IPv4 or IPv6 address.")
 
     # Validate that netgroups are present
-    if type(netgroups) is not list:
+    if not isinstance(netgroups, list):
         raise IsolatorException("Must provide list of netgroups.")
 
     _isolate(hostname, pid, container_id, ipv4_addrs_validated, ipv6_addrs_validated, netgroups, labels)
@@ -465,6 +499,8 @@ def allocate(args):
     uid = args.get("uid")
     num_ipv4 = args.get("num_ipv4")
     num_ipv6 = args.get("num_ipv6")
+    netgroups = args.get("netgroups")
+    labels = args.get("labels", {})
 
     # Validations
     if not uid:
@@ -494,8 +530,35 @@ def allocate(args):
         except TypeError:
             raise IsolatorException("num_ipv6 must be an integer")
 
-    return _allocate(num_ipv4, num_ipv6, hostname, uid)
+    # Check if the user has requested a specific IP via label
+    # Note: this will be deprecated once marathon provides the ipv4_addrs   
+    # field which will trigger netmodules' 'reserve'.
+    # This implementation replaces the requested IPAM IP with the static IP.
+    # i.e. If a user requests 1 IP, and specifies one specific IP in the 
+    # ipv4_addr label, they will receive 1 IP back - the one they specified.
+    ipv4_addrs = []
+    if labels.has_key("ipv4_addrs"):
+        try:
+            ipv4_addrs = eval(labels['ipv4_addrs'])
+        except SyntaxError:
+            raise IsolatorException("Calico detected a malformed ipv4_addrs "
+                    "field. Ensure you've specified a string representation "
+                    "of a list of strings.")
+        # 'reserve' will sanitize the IP Addresses for us 
+        reserve({"hostname": hostname,
+                 "ipv4_addrs": ipv4_addrs,
+                 "ipv6_addrs": [],
+                 "uid": uid,
+                 "netgroups": netgroups,
+                 "labels": labels})
 
+    # Decrement how many IPAM'd IPs they will be getting by how many they
+    # requested by label.
+    num_ipv4 = max(num_ipv4 - len(ipv4_addrs), 0)
+
+    result = _allocate(num_ipv4, num_ipv6, hostname, uid)
+    result['ipv4'] += ipv4_addrs
+    return json.dumps(result)
 
 def _allocate(num_ipv4, num_ipv6, hostname, uid):
     """
@@ -505,8 +568,7 @@ def _allocate(num_ipv4, num_ipv6, hostname, uid):
     :param hostname: The hostname of this host.
     :param uid: A unique ID, which is indexed by the IPAM module and can be
     used to release all addresses with the uid.
-    :return: JSON-serialized dictionary of the result in the following
-    format:
+    :return: Dictionary of the result in the following format:
     {
         "ipv4": ["192.168.23.4"],
         "ipv6": ["2001:3ac3:f90b:1111::1", "2001:3ac3:f90b:1111::2"],
@@ -517,10 +579,9 @@ def _allocate(num_ipv4, num_ipv6, hostname, uid):
                                        host=HOSTNAME)
     ipv4_strs = [str(ip) for ip in result[0]]
     ipv6_strs = [str(ip) for ip in result[1]]
-    result_json = {"ipv4": ipv4_strs,
-                   "ipv6": ipv6_strs,
-                   "error": None}
-    return json.dumps(result_json)
+    return {"ipv4": ipv4_strs,
+            "ipv6": ipv6_strs,
+            "error": None}
 
 
 def release(args):
