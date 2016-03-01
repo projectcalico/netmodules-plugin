@@ -14,7 +14,7 @@ dist/calico_mesos: $(CALICO_MESOS_FILES)
 	docker run --rm \
          -v `pwd`/calico_mesos/:/code/calico_mesos \
          -v `pwd`/dist/:/code/dist \
-	 calico/build \
+				 calico/build:v0.12.0 \
 	 pyinstaller calico_mesos/calico_mesos.py -ayF
 
 ## Run the UTs in a container
