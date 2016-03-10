@@ -342,7 +342,6 @@ def _isolate(hostname, ns_pid, container_id, ipv4_addrs, ipv6_addrs, profiles, l
 
     # Assign remaining netgroup profiles
     for profile in profiles:
-        profile = "ng_%s" % profile
         if not datastore.profile_exists(profile):
             _log.info("Assigning Netgroup Profile: %s" % profile)
             _create_profile_for_netgroup(profile)
