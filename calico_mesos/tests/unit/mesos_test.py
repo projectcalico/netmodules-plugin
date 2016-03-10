@@ -404,7 +404,7 @@ class TestDefaultProfile(unittest.TestCase):
         calico_mesos._isolate("testhostname", 1234, "container-id-1234", ["192.168.0.0"], [], profiles, None)
 
         self.assertIn("public", created_endpoint.profile_ids)
-        self.assertIn("ng_prof_a", created_endpoint.profile_ids)
+        self.assertIn("prof_a", created_endpoint.profile_ids)
         self.assertIn("default_testhostname", created_endpoint.profile_ids)
         self.assertEqual(len(created_endpoint.profile_ids), 3)
 
