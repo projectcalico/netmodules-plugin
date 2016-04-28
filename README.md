@@ -25,7 +25,7 @@ In order to utilize Calico Networking, each slave in the Mesos cluster must inst
 - Each slave must start the core mesos-slave process with `--modules=file:///path/to/modules.json`
 
 ## Demonstration
-For information on adding Calico to your Mesos Cluster, see https://github.com/projectcalico/calico-mesos-deployments
+For information on adding Calico to your Mesos Cluster, see https://github.com/projectcalico/calico-containers/tree/master/docs/mesos
 
 
 [calico]: http://projectcalico.org
