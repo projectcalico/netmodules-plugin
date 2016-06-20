@@ -1,6 +1,6 @@
 <!--- master only -->
 [![CircleCI branch](https://img.shields.io/circleci/project/projectcalico/calico-mesos/master.svg?label=calico_mesos)](https://circleci.com/gh/projectcalico/calico-mesos/tree/master)
-[![Slack Status](https://calicousers-slackin.herokuapp.com/badge.svg)](https://calicousers-slackin.herokuapp.com)
+[![Slack Status](https://slack.projectcalico.org/badge.svg)](https://slack.projectcalico.org)
 [![IRC Channel](https://img.shields.io/badge/irc-%23calico-blue.svg)](https://kiwiirc.com/client/irc.freenode.net/#calico)
 <!--- end of master only -->
 
