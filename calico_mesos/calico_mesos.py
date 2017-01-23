@@ -1,4 +1,4 @@
-# Copyright 2015 Metaswitch Networks
+# Copyright 2015 Tigera, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ def calico_mesos():
         "command": "allocate|isolate|reserve|cleanup",
         "args": {}
     }
-    
+
     Args will vary depending on which function is called. See the docstring
     of each of the listed command functions for accepted args.
 
@@ -90,7 +90,7 @@ def calico_mesos():
     #     ]
     #   }
     # }
-    # 
+    #
     # Update them to a more pythonic representation:
     # {
     #     "args": {
@@ -451,7 +451,7 @@ def reserve(args):
 
 def _reserve(hostname, uid, ipv4_addrs, ipv6_addrs):
     """
-    Reserve an IP from the IPAM. 
+    Reserve an IP from the IPAM.
     :param hostname: The host agent which is reserving this IP
     :param uid: A unique ID, which is indexed by the IPAM module and can be
     used to release all addresses with the uid.
@@ -530,10 +530,10 @@ def allocate(args):
             raise IsolatorException("num_ipv6 must be an integer")
 
     # Check if the user has requested a specific IP via label
-    # Note: this will be deprecated once marathon provides the ipv4_addrs   
+    # Note: this will be deprecated once marathon provides the ipv4_addrs
     # field which will trigger netmodules' 'reserve'.
     # This implementation replaces the requested IPAM IP with the static IP.
-    # i.e. If a user requests 1 IP, and specifies one specific IP in the 
+    # i.e. If a user requests 1 IP, and specifies one specific IP in the
     # ipv4_addr label, they will receive 1 IP back - the one they specified.
     ipv4_addrs = []
     if labels.has_key("ipv4_addrs"):
@@ -543,7 +543,7 @@ def allocate(args):
             raise IsolatorException("Calico detected a malformed ipv4_addrs "
                     "field. Ensure you've specified a string representation "
                     "of a list of strings.")
-        # 'reserve' will sanitize the IP Addresses for us 
+        # 'reserve' will sanitize the IP Addresses for us
         reserve({"hostname": hostname,
                  "ipv4_addrs": ipv4_addrs,
                  "ipv6_addrs": [],

@@ -1,4 +1,4 @@
-# Copyright 2015 Metaswitch Networks
+# Copyright 2015 Tigera, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -148,7 +148,7 @@ class TestAllocate(unittest.TestCase):
                            "error": None}
         result = calico_mesos.allocate(args)
         self.assertTrue(m_allocate.called)
-        self.assertEqual(result, '{"error": null, "ipv4": ["192.168.1.1"], "ipv6": "dead:beef::"}') 
+        self.assertEqual(result, '{"error": null, "ipv4": ["192.168.1.1"], "ipv6": "dead:beef::"}')
 
     @parameterized.expand([
     ({"hostname": "metaman",
@@ -165,7 +165,7 @@ class TestAllocate(unittest.TestCase):
                            "error": None}
         result = calico_mesos.allocate(args)
         self.assertEqual(result, '{"error": null, "ipv4": ["192.168.3.1"], "ipv6": "dead:beef::"}')
-    
+
 
 class TestReserve(unittest.TestCase):
     @parameterized.expand([
